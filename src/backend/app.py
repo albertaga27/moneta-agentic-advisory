@@ -9,7 +9,7 @@ from azure.identity import DefaultAzureCredential
 from opentelemetry.trace import get_tracer
 
 from conversation_store import ConversationStore  
-from sk.handler import SemanticKernelHandler  
+from sk.handler import Handler  
   
 import util
 
@@ -35,15 +35,16 @@ app = FastAPI()
 
 @app.post("/http_trigger")
 async def http_trigger(request_body: dict = Body(...)):
-    logging.info('Empowering RMs - HTTP trigger function processed a request.')
+    logging.info('Agentic Advisory - HTTP trigger function processed a request.')
         
-
     # Extract parameters from the request body  
     user_id = request_body.get('user_id')
     chat_id = request_body.get('chat_id')  # None if starting a new chat
     user_message = request_body.get('message')
     load_history = request_body.get('load_history')
     usecase_type = request_body.get('use_case')
+    is_deep_research = request_body.get('is_deep_research')
+    logging.info(f'is_deep_research = {is_deep_research}')
   
     # Validate required parameters
     if not user_id:
@@ -94,7 +95,7 @@ async def http_trigger(request_body: dict = Body(...)):
 
         # Decide which handler to use based on the HANDLER_TYPE environment variable  
         handler_type = os.getenv("HANDLER_TYPE", "semantickernel")  
-        handler = SemanticKernelHandler(db)  
+        handler = Handler(db)  
 
     
         logging.info(f"Handling request with {handler_type} handler...")
@@ -106,7 +107,8 @@ async def http_trigger(request_body: dict = Body(...)):
                 user_message=user_message,
                 load_history=load_history,
                 usecase_type=usecase_type,
-                user_data=user_data
+                user_data=user_data,
+                is_deep_research=is_deep_research
             )  
         except Exception as e:  
             logging.error(f"Error in handler: {e}")  

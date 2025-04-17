@@ -89,6 +89,8 @@ if "use_case" not in st.session_state:
     st.session_state.use_case = 'fsi_insurance'  # Default use case
 if "AGENTS" not in st.session_state:
     st.session_state.AGENTS = INS_AGENTS  # Default agents
+if "is_deep_research" not in st.session_state:
+    st.session_state.is_deep_research = False
 
 def fetch_conversations():
     payload = {
@@ -225,6 +227,16 @@ def display_chat():
     if st.session_state.current_conversation_index is None:
         st.write("Please start a new conversation or select an existing one from the sidebar.")
         return
+    
+    # Deep Research toggle
+    mode = st.radio(
+        "Mode:",
+        ["Standard", "Deep Research"],
+        index=1 if st.session_state.is_deep_research else 0,
+        horizontal=True,
+    )
+    # Sync into session_state
+    st.session_state.is_deep_research = (mode == "Deep Research")    
 
     question_options = []
     # Get the current conversation
@@ -286,6 +298,7 @@ def display_chat():
                     with st.chat_message(message['role']):
                         st.write(f"{agent_name}: {message['content']}")
 
+
     # Handle user input
     user_input = st.chat_input("Ask Moneta anything...")
     if user_input:
@@ -302,7 +315,8 @@ def send_message_to_backend(user_input, conversation_dict):
     payload = {
         "user_id": st.session_state.user_id,
         "message": user_input,
-        "use_case": st.session_state.use_case
+        "use_case": st.session_state.use_case,
+        "is_deep_research": st.session_state.is_deep_research
     }
     if conversation_dict.get('name') != 'New Conversation':
         payload["chat_id"] = conversation_dict.get('name')

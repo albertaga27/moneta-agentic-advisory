@@ -4,17 +4,19 @@ import json
 from sk.orchestrators.insurance import InsuranceOrchestrator
 from sk.orchestrators.banking import BankingOrchestrator
 from sk.orchestrators.energy import EnergyOrchestrator
+from sk.orchestrators.deep_research_orchestrator import DeepResearchOrchestrator
 
-class SemanticKernelHandler:
+class Handler:
     def __init__(self, history_db):
         self.logger = logging.getLogger(__name__)
-        self.logger.debug("Semantic Kernel Handler init")
+        self.logger.debug("Agentic Handler init")
 
         self.history_db = history_db
         self.orchestrators = {}
         self.orchestrators['fsi_insurance'] = InsuranceOrchestrator()
         self.orchestrators['fsi_banking'] = BankingOrchestrator()
         self.orchestrators['energy'] = EnergyOrchestrator()
+        self.orchestrators['deep_research'] = DeepResearchOrchestrator()
 
     def load_history(self, user_id):
         user_data = self.history_db.read_user_info(user_id)
@@ -31,7 +33,8 @@ class SemanticKernelHandler:
         self.logger.info(f"user history: {json.dumps(conversation_list)}")
         return {"status_code": 200, "data": conversation_list}
 
-    async def handle_request(self, user_id, chat_id, user_message, load_history, usecase_type, user_data):
+
+    async def handle_request(self, user_id, chat_id, user_message, load_history, usecase_type, user_data, is_deep_research):
         # Additional Use Case - load history
         if load_history is True:
             return self.load_history(user_id=user_id)
@@ -61,7 +64,11 @@ class SemanticKernelHandler:
         if not usecase_type in self.orchestrators: 
             return {"status_code": 400, "error": "Use case not recognized"}
         
-        orchestrator = self.orchestrators[usecase_type]
+        #TODO not elegant..
+        if is_deep_research:
+            orchestrator = self.orchestrators['deep_research']
+        else:
+            orchestrator = self.orchestrators[usecase_type]
         reply = await orchestrator.process_conversation(user_id, conversation_messages)
 
         # Store updated conversation

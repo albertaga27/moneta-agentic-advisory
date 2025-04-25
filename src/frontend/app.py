@@ -228,19 +228,13 @@ def display_chat():
         st.write("Please start a new conversation or select an existing one from the sidebar.")
         return
     
-    # Deep Research toggle
-    mode = st.radio(
-        "Mode:",
-        ["Standard", "Deep Research"],
-        index=1 if st.session_state.is_deep_research else 0,
-        horizontal=True,
-    )
-    # Sync into session_state
-    st.session_state.is_deep_research = (mode == "Deep Research")    
-
     question_options = []
     # Get the current conversation
     conversation_dict = st.session_state.conversations[st.session_state.current_conversation_index]
+    # ensure to have the deep_research flag
+    if 'deep_research_used' not in conversation_dict:
+        conversation_dict['deep_research_used'] = False
+
     if 'messages' not in conversation_dict:
         conversation_dict['messages'] = []
 
@@ -298,10 +292,27 @@ def display_chat():
                     with st.chat_message(message['role']):
                         st.write(f"{agent_name}: {message['content']}")
 
+    #display or not the the deep research radio
+    if not conversation_dict['deep_research_used']:
+        mode = st.radio(
+            "Mode:",
+            ["Standard", "Deep Research"],
+            index=1 if st.session_state.is_deep_research else 0,
+            horizontal=True,
+        )
+        st.session_state.is_deep_research = (mode == "Deep Research")
+    else:
+        st.markdown("🔒 **Deep Research already used in this conversation.**")
+        # force it off
+        st.session_state.is_deep_research = False
 
     # Handle user input
     user_input = st.chat_input("Ask Moneta anything...")
     if user_input:
+        # if they're asking a deep research query, mark it used so it can't be re‑enabled
+        if st.session_state.is_deep_research:
+            conversation_dict['deep_research_used'] = True
+            
         messages.append({'role': 'user', 'content': user_input})
         with st.spinner('Moneta agents are collaborating to find the best answer...'):
             assistant_responses = send_message_to_backend(user_input, conversation_dict)
@@ -356,9 +367,13 @@ def call_backend(payload):
 
 def start_new_conversation():
     st.session_state.conversations.append({
-        'messages': [],
-        'name': 'New Conversation'
+    'messages': [],
+        'name': 'New Conversation',
+        'deep_research_used': False   # ← track per-conversation
     })
+    # reset deep research toggle whenever you start fresh
+    st.session_state.is_deep_research = False
+
     st.session_state.current_conversation_index = len(st.session_state.conversations) - 1
     st.session_state.last_selected_question = "Select a predefined question or type your own below"
 

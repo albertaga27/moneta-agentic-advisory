@@ -102,7 +102,7 @@ class DeepResearchOrchestrator:
     #############################################
     # Utility Functions
     #############################################
-    def trim_prompt(self, prompt: str, max_length: int = 25000) -> str:
+    def trim_prompt(self, prompt: str, max_length: int = 80000) -> str:
         """Trim the prompt if it exceeds the maximum allowed length."""
         return prompt[:max_length]
 
@@ -183,7 +183,7 @@ class DeepResearchOrchestrator:
         learnings_str = "\n".join([f"<learning>\n{learning}\n</learning>" for learning in learnings])
         prompt_text = (
             f"Write a final detailed report on the following prompt using all the provided research learnings. "
-            "Include as much detail as possible (aim for 3+ pages).\n\n"
+            "Include as much details as possible (aim for 5+ pages).\n\n"
             f"<prompt>{prompt}</prompt>\n\n"
             f"Learnings:\n<learnings>\n{learnings_str}\n</learnings>\n"
             "Output ONLY a valid JSON object with a key 'reportMarkdown' that contains the full report in Markdown, and no extra text."
@@ -324,7 +324,7 @@ class DeepResearchOrchestrator:
         logging.info(f"Deep research inquiry={last_user_message}")
         #invoke
         try:
-            result = await self.deep_research(last_user_message, breadth=3, depth=2)
+            result = await self.deep_research(last_user_message, breadth=5, depth=3)
 
             logger.debug("Learnings:", result.learnings)
             logger.debug("Visited URLs:", result.visited_urls)

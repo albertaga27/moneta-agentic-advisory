@@ -37,7 +37,7 @@ class WeatherFacade:
             else:
                 return {"error": f"HTTP {response.status_code}"}
         
-        except:
+        except Exception as e:
             logging.error(f"An unexpected error occurred in the 'get_weather' function of the 'weather_agent': {e}") 
             return 
         

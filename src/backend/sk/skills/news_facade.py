@@ -84,7 +84,7 @@ class NewsFacade:
                     print("News table not found.")
             
                 return json.dumps(df.values.tolist())  
-        except:
+        except Exception as e:
             logging.error(f"An unexpected error occurred in the 'search_news' function of the 'news_agent': {e}") 
             return 
 

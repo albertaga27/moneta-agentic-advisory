@@ -48,6 +48,6 @@ class FundsFacade:
                 output.append(result)
 
             return json.dumps(output)
-        except:
+        except Exception as e:
             logging.error(f"An unexpected error occurred in the 'search' function of the 'funds_agent': {e}") 
             return 

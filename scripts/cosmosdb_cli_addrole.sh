@@ -1,7 +1,7 @@
 # If you get cosmosdb auth error due to local auth disabled and need AAD token to authorize reqeusts:
-resourceGroupName="AGA-GBB-AI-Resource-SW"
-accountName="aga-gbb-ai-cosmosdb"
-principalId="d02febeb-1135-4c9f-a0b5-2aba4b27793d"
+resourceGroupName="<your res group where you have your cosmosdb>"
+accountName="<your cosmosdb account name>"
+principalId="<your azure principal id>"
 
 # Retrieve the scope (ensure variables are referenced correctly)
 scope=$(

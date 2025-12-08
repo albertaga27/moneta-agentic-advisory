@@ -37,7 +37,7 @@ from azure.monitor.opentelemetry.exporter import (
     AzureMonitorTraceExporter,
 )
 
-from sk.orchestrators.custom_span_processor import CustomSpanProcessor
+from foundry.orchestrators.custom_span_processor import CustomSpanProcessor
 
 def load_dotenv_from_azd():
     result = run("azd env get-values", stdout=PIPE, stderr=PIPE, shell=True, text=True)

@@ -1,0 +1,8 @@
+# Azure AI Agents with Search Dependencies
+azure-ai-agents>=1.1.0b4
+azure-ai-projects>=1.0.0b8
+azure-identity>=1.18.0
+azure-search-documents>=11.4.0
+python-dotenv>=1.0.0
+semantic-kernel>=1.15.0
+pytest>=7.0.0

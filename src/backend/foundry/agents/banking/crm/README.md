@@ -190,6 +190,8 @@ python list_agents.py delete crm-agent
 
 This utility helps manage agents in your Azure AI Foundry project, preventing duplicate agents and helping with cleanup.
 
+> **Note**: The Foundry agent name for this CRM agent is `moneta-crm-banking-agent`.
+
 ## 💡 Agent Lifecycle Management
 
 The CRM agent now includes intelligent lifecycle management:

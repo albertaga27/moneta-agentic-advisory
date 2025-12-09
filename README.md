@@ -4,31 +4,49 @@
 
 Moneta is an AI-powered assistant designed to empower insurance and banking advisors. This Solution Accelerator provides a chat interface where advisors can interact with various AI agents specialized in different domains such as insurance policies, CRM, product information, funds, CIO insights, and news.
 
-The Agentic framework used behind the scene is Semantic Kernel:
-* [Semantic Kernel](https://learn.microsoft.com/en-us/semantic-kernel/overview/) 
+## 🚀 Agent Framework & Azure AI Foundry
+
+Moneta uses the **Microsoft Agent Framework** to orchestrate **native Azure AI Foundry agents**:
+
+* [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) - Multi-agent orchestration with HandoffBuilder pattern
+* [Azure AI Foundry](https://ai.azure.com/) - Native hosted agents with versioning support
+
+### Key Architecture Features
+
+- **Native Foundry Agents**: Agents are hosted in Azure AI Foundry with automatic versioning and reuse
+- **HandoffBuilder Pattern**: Coordinator agent routes requests to specialist agents (CRM, CIO, Funds, News)
+- **Conversation Memory**: Full conversation history is maintained across API calls via CosmosDB
+- **OpenTelemetry Tracing**: Built-in observability with Azure Application Insights integration
+- **Session-Level Tracing**: Custom spans for conversation turns and agent handoffs
 
 ## Prerequisites
 
 * Docker
-* [uv](https://docs.astral.sh/uv/getting-started/installation/)
-* python 3.12
-* pip
+* [uv](https://docs.astral.sh/uv/getting-started/installation/) - Python package manager
+* Python 3.12
+* Azure CLI (logged in)
+* Azure AI Foundry project (for hosted agents)
 
 ## Features
 
-- Agentic framework selection Support: Semantic Kernel 
+- **Microsoft Agent Framework**: Multi-agent orchestration with HandoffBuilder pattern
+- **Azure AI Foundry Integration**: Native hosted agents with versioning support
 - Multi-Use Case Support: Switch between insurance, banking and energy use cases
-- Agent Collaboration: Agents collaborate to provide the best answers
+- Agent Collaboration: Coordinator routes to specialists who collaborate to provide answers
 - Azure AD Authentication: Secure login with Microsoft Azure Active Directory
-- Conversation History: Access and continue previous conversations
+- Conversation History: Access and continue previous conversations with full context
 
 ## Implementation Details
 - Python 3.12 or higher
+- **Microsoft Agent Framework** with HandoffBuilder for multi-agent orchestration
+- **Azure AI Foundry** for native hosted agents with versioning
 - Streamlit (frontend app - chatGPT style with conversation segregation and memory)
+- FastAPI (backend API with async support)
 - Microsoft Authentication Library (MSAL - if using authentication - optional)
 - Azure AD application registration (if using authentication - optional)
 - An Azure Container App hosting backend API endpoint
 - CosmosDB to store user conversations and history
+- Azure Application Insights for OpenTelemetry tracing
 
 ## Use Cases
 
@@ -40,11 +58,15 @@ The Agentic framework used behind the scene is Semantic Kernel:
 
 ### Banking 
 
-- `CRM`: simulate fetching clients information from a CRM (DB, third-party API etc)
-- `Funds and ETF RAG`: vector search with AI Search on few funds and ETF factsheets (product information)
-- `CIO`: vector search with AI Search on in-house investments view and recommendations
-- `News`: RSS online feed search on stock news
-- `Responder`: collects previous agents replies and respond to the user
+Uses the **HandoffBuilder** pattern with a coordinator that routes to specialist agents:
+
+- `Coordinator`: Routes user requests to appropriate specialist agents
+- `CRM Agent`: Fetches client information and portfolio data from CRM (simulated)
+- `Funds Agent`: Vector search with AI Search on funds and ETF factsheets
+- `CIO Agent`: Vector search with AI Search on in-house investment views and recommendations
+- `News Agent`: RSS online feed search on stock news for portfolio positions
+
+All agents are hosted as **native Azure AI Foundry agents** with automatic versioning.
 
 ### Energy
 
@@ -59,17 +81,21 @@ The Agentic framework used behind the scene is Semantic Kernel:
 
 - src
   - backend
-    - sk
+    - foundry
       - agents
-        - banking # agents files
-        - insurance # agents files
-        - energy # agents files
+        - banking # Foundry agent definitions and functions
+          - cio/ # CIO agent with AI Search functions
+          - crm/ # CRM agent with client data functions
+          - funds/ # Funds agent with AI Search functions
+          - news/ # News agent with RSS feed functions
+        - insurance # agents files (legacy)
+        - energy # agents files (legacy)
       - orchestrators
-      - skills
-    - app.py # exposes API
+        - foundry_banking_orchestrator.py # Main orchestrator with HandoffBuilder
+    - app.py # FastAPI backend exposing API
 
   - frontend
-    - app.py # streamlit app
+    - app.py # Streamlit app
 
   - data
     - ai-search-index
@@ -79,7 +105,7 @@ The Agentic framework used behind the scene is Semantic Kernel:
     - customer-profile
 
 - infra
-  - bicep file
+  - bicep files
   - infra modules
 
 
@@ -151,9 +177,12 @@ Activate the `.venv` virtual environment or run the binary directly:
 
 ```shell
 cd src/backend
-uv sync
-./.venv/bin/uvicorn app:app 
+uv sync --prerelease=allow
+source .venv/bin/activate
+uvicorn app:app --port 8000
 ```
+
+**Note**: The `--prerelease=allow` flag is required for the agent-framework package.
 
 ### Running the App locally - FRONTEND
 
@@ -162,7 +191,15 @@ Install uv prior executing.
 
 To run locally:
 
-mind the sample.env file - by default the application will try to read AZD enviornment configuraiton and falls on .env only when it does not find one.
+mind the sample.env file - by default the application will try to read AZD environment configuration and falls on .env only when it does not find one.
+
+**Key Environment Variables for Agent Framework:**
+```shell
+PROJECT_ENDPOINT=https://your-foundry-project.services.ai.azure.com/api/projects/your-project
+MODEL_DEPLOYMENT_NAME=gpt-4o-mini
+HANDLER_TYPE=foundry_banking
+APPLICATIONINSIGHTS_CONNECTION_STRING=your-connection-string
+```
 
 **OBS!** Activate .venv or run the binary directly.
 

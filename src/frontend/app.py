@@ -8,10 +8,8 @@ from dotenv import load_dotenv
 from config import (
     INS_AGENTS, 
     BANK_AGENTS, 
-    ENERGY_AGENTS,
     INS_PREDEFINED_QUESTIONS, 
     BANK_PREDEFINED_QUESTIONS,
-    ENERGY_PREDEFINED_QUESTIONS,
     AGENT_STYLES,
     GENERAL_STYLES
 )
@@ -86,9 +84,9 @@ if "user_input" not in st.session_state:
 if "last_selected_question" not in st.session_state:
     st.session_state.last_selected_question = None
 if "use_case" not in st.session_state:
-    st.session_state.use_case = 'fsi_insurance'  # Default use case
+    st.session_state.use_case = 'fsi_banking'  # Default use case
 if "AGENTS" not in st.session_state:
-    st.session_state.AGENTS = INS_AGENTS  # Default agents
+    st.session_state.AGENTS = BANK_AGENTS  # Default agents
 if "is_deep_research" not in st.session_state:
     st.session_state.is_deep_research = False
 
@@ -120,14 +118,12 @@ def display_sidebar():
         st.write("Empowering Advisors with AI")
         st.write(f"Welcome, {st.session_state.display_name}!")
 
-        use_case_options = ['fsi_insurance', 'fsi_banking', 'energy']
+        use_case_options = ['fsi_insurance', 'fsi_banking']
         selected_use_case = st.selectbox('Select Use Case', use_case_options, index=use_case_options.index(st.session_state.use_case), key='use_case_selectbox')
         if selected_use_case != st.session_state.use_case:
             st.session_state.use_case = selected_use_case
             if st.session_state.use_case == 'fsi_insurance':
                 st.session_state.AGENTS = INS_AGENTS
-            elif st.session_state.use_case == 'energy':
-                st.session_state.AGENTS = ENERGY_AGENTS
             else:
                 st.session_state.AGENTS = BANK_AGENTS
             st.session_state.conversations = fetch_conversations()
@@ -135,9 +131,7 @@ def display_sidebar():
 
         # Initialize AGENTS based on use_case
         if st.session_state.use_case == 'fsi_insurance':
-            st.session_state.AGENTS = INS_AGENTS
-        elif st.session_state.use_case == 'energy':
-            st.session_state.AGENTS = ENERGY_AGENTS    
+            st.session_state.AGENTS = INS_AGENTS 
         else:
             st.session_state.AGENTS = BANK_AGENTS
 
@@ -155,7 +149,7 @@ def display_sidebar():
                             {details['emoji']}
                         </div>
                         <div class="agent-name">
-                            {agent_name} Agent
+                            {agent_name}
                         </div>
                         <div class="agent-status">
                             ● Online
@@ -243,8 +237,6 @@ def display_chat():
     # Display predefined questions based on use case
     if st.session_state.use_case == 'fsi_banking':
         predefined_questions = BANK_PREDEFINED_QUESTIONS
-    elif st.session_state.use_case == 'energy':
-        predefined_questions = ENERGY_PREDEFINED_QUESTIONS
     else:
         predefined_questions = INS_PREDEFINED_QUESTIONS
     question_options = ["Select a predefined question or type your own below"] + predefined_questions
@@ -281,7 +273,7 @@ def display_chat():
                         st.markdown(
                             f"""
                             <div style='border-left: 5px solid {agent_info['color']}; padding-left: 10px;'>
-                                <strong>{agent_name} Agent:</strong> 
+                                <strong>{agent_name}:</strong> 
                                 <div>{message['content']}</div>
                             </div>
                             """,
@@ -397,8 +389,6 @@ def main():
     # Initialize AGENTS based on use_case
     if st.session_state.use_case == 'fsi_insurance':
         st.session_state.AGENTS = INS_AGENTS
-    elif st.session_state.use_case == 'energy':
-        st.session_state.AGENTS = ENERGY_AGENTS    
     else:
         st.session_state.AGENTS = BANK_AGENTS
 

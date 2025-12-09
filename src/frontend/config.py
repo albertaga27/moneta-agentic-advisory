@@ -6,12 +6,12 @@ INS_PREDEFINED_QUESTIONS = [
 ]
 
 INS_AGENTS = {
-    'CRM': {
+    'crm_insurance_agent': {
         'emoji': '👥', 
         'color': '#17a2b8',
         'description': 'Access and retrieve customer information from the company\'s database. It specifically focuses on insurance-related client data, such as policies, coverages, and premiums, but will only provide information when given a specific client\'s name or ID.'
     },
-    'Product': {
+    'policies_agent': {
         'emoji': '🔍', 
         'color': '#ffc107',
         'description': 'Dedicated tool for answering general questions about investment funds and ETFs. Unlike the CRM Agent which handles client-specific data, this agent responds to general product inquiries by searching through an AI-powered knowledge base. It\'s designed to provide accurate product information, details about fund offerings, and general investment conditions.'
@@ -20,7 +20,7 @@ INS_AGENTS = {
 
 # Banking Configuration
 BANK_PREDEFINED_QUESTIONS = [
-    "Provide me a summary of the portfolio's positions of my client id 123456",
+    "Provide me a summary of the portfolio's positions of my client Pete Mitchell",
     "What are our Chief Investment Office (CIO) believes on the AI sector?",
     "What is our in-house view from our CIO about Growth investing?",
     "Show Pete Mitchell portfolio performance and suggest any rebalancing options based on recent CIO views.",
@@ -31,58 +31,28 @@ BANK_PREDEFINED_QUESTIONS = [
 ]
 
 BANK_AGENTS = {
-    'CRM': {
+    'crm_banking_agent': {
         'emoji': '👥', 
         'color': '#17a2b8',
         'description': 'Access and retrieve customer information from the company\'s database. It specifically focuses on insurance-related client data, such as policies, coverages, and premiums, but will only provide information when given a specific client\'s name or ID.'
     },
-    'Funds': {
+    'funds_agent': {
         'emoji': '💰', 
         'color': '#007bff',
         'description': 'Provides fund analysis and investment recommendations. It searches through internal bank documents to retrieve the institution\'s official investment views, research findings, and recommendations. This agent is designed to help advisors make informed decisions about their clients\' investments.'
     },
-    'CIO': {
+    'cio_agent': {
         'emoji': '📈', 
         'color': '#ffc107',
         'description': 'Provides access to official investment research and analysis from Chief Investment Office (CIO). It searches through internal bank documents to retrieve the institution\'s official investment views, research findings, and recommendations.'
     },
-    'News': {
+    'news_agent': {
         'emoji': '📰', 
         'color': '#6c757d',
         'description': 'Automatically collects and organizes the latest investment news from Morningstar for your portfolio positions. It helps you stay informed about your investments by gathering relevant articles, including their titles, descriptions, categories, and publication details, all presented in an organized format for easy review.'
     }
 }
 
-# Energy Configuration
-ENERGY_PREDEFINED_QUESTIONS = [
-    "Get energy market news from today and analyze the content for insights",
-    "Analyze the production and consumption for the next days based on weather forecast",
-    "What was Solar production in Switzerland yesterday?",
-    "What was total consumption of electricity in the last week in Switzerland?"
-]
-
-ENERGY_AGENTS = {
-    'Electricity': {
-        'emoji': '📈', 
-        'color': '#17a2b8',
-        'description': 'Electricity data on consumption and production in Switzerland.'
-    },
-    'News': {
-        'emoji': '🔍', 
-        'color': '#ffc107',
-        'description': 'Energy related news and articles search.'
-    },
-    'Insights': {
-        'emoji': '💰', 
-        'color': '#007bff',
-        'description': 'Provide prices and forecasts insights out of market news and researches.'
-    },
-    'Weather': {
-        'emoji': '☀️', 
-        'color': 'Ffff00',
-        'description': 'Provide weather forecasts information'
-    }
-}
 
 # CSS Styles
 AGENT_STYLES = """

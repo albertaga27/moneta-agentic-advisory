@@ -4,6 +4,7 @@ import json
 
 from foundry.orchestrators.deep_research_orchestrator import DeepResearchOrchestrator
 from foundry.orchestrators.foundry_banking_orchestrator import FoundryBankingOrchestrator
+from foundry.orchestrators.foundry_insurance_orchestrator import FoundryInsuranceOrchestrator
 
 class Handler:
     def __init__(self, history_db, handler_type: str = "foundry_banking"):
@@ -13,7 +14,11 @@ class Handler:
         self.history_db = history_db
         self.handler_type = handler_type
         self.orchestrators = {}
-        #self.orchestrators['fsi_insurance'] = InsuranceOrchestrator()
+        
+        # Use FoundryInsuranceOrchestrator for fsi_insurance
+        self.orchestrators['fsi_insurance'] = FoundryInsuranceOrchestrator(use_foundry=True)
+        self.logger.info(f"Using FoundryInsuranceOrchestrator for fsi_insurance")
+        
         #self.orchestrators['energy'] = EnergyOrchestrator()
         
         # Use FoundryBankingOrchestrator for fsi_banking

@@ -19,6 +19,10 @@ Moneta uses the **Microsoft Agent Framework** to orchestrate **native Azure AI F
 - **OpenTelemetry Tracing**: Built-in observability with Azure Application Insights integration
 - **Session-Level Tracing**: Custom spans for conversation turns and agent handoffs
 
+> **⚠️ Important Note on Handoff Tools**
+> 
+> Foundry-hosted agents (`AzureAIClient`) don't properly support tool calling with synthesized handoff tools - the model outputs tool names as text instead of calling them as functions. For this reason, the orchestrator workflow uses `AzureOpenAIChatClient` (Azure OpenAI) for reliable handoff execution, while Foundry is still used for agent persistence and versioning when using the `--foundry --new` flags.
+
 ## Prerequisites
 
 * Docker

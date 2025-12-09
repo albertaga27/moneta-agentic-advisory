@@ -170,6 +170,7 @@ class FoundryBankingOrchestrator:
         self.foundry_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
         self.deployment_name = (
             os.getenv("AZURE_OPENAI_DEPLOYMENT") or 
+            os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or
             os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME") or 
             os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4o-mini")
         )
@@ -185,33 +186,41 @@ class FoundryBankingOrchestrator:
         if self._initialized:
             return
         
+        # Validate Azure OpenAI endpoint is available
+        if not self.openai_endpoint:
+            raise ValueError(
+                "AZURE_OPENAI_ENDPOINT is required for the orchestrator workflow. "
+                "The HandoffBuilder requires Azure OpenAI for proper tool calling support."
+            )
+        
         credential = AzureCliCredential()
         
-        if self.use_foundry:
-            # Foundry mode - use hosted agents
-            coordinator, crm_agent, cio_agent, funds_agent, news_agent = await create_foundry_agents(
-                project_endpoint=self.endpoint,
-                credential=credential,
-                model_deployment_name=self.deployment_name,
-                use_existing=True,
-                use_latest_version=True
-            )
-        else:
-            # Azure OpenAI mode - use in-memory agents
-            chat_client = AzureOpenAIChatClient(
-                endpoint=self.endpoint,
-                deployment_name=self.deployment_name,
-                credential=credential
-            )
-            coordinator, crm_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
+        # Always use AzureOpenAIChatClient for the orchestrator workflow
+        # because Foundry-hosted agents (AzureAIClient) don't properly support
+        # tool calling with synthesized handoff tools.
+        # 
+        # The --foundry flag now primarily affects:
+        # 1. Logging/tracing to indicate Foundry mode
+        # 2. When combined with --new, agents are persisted to Foundry via AgentManager
+        #
+        # But the actual workflow always uses AzureOpenAIChatClient for reliable handoffs.
+        self.logger.info(f"Using Azure OpenAI endpoint for workflow: {self.openai_endpoint}")
+        chat_client = AzureOpenAIChatClient(
+            endpoint=self.openai_endpoint,
+            deployment_name=self.deployment_name,
+            credential=credential
+        )
+        coordinator, crm_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
         
-        # Build the handoff workflow
+        # Build the handoff workflow with auto-registered handoff tools
+        # auto_register_handoff_tools(True) synthesizes handoff_to_X tools for the coordinator
         self._workflow = (
             HandoffBuilder(
                 name="moneta_banking_handoff",
                 participants=[coordinator, crm_agent, cio_agent, funds_agent, news_agent],
             )
             .set_coordinator(coordinator)
+            .auto_register_handoff_tools(True)  # This adds handoff_to_X tools to coordinator
             .with_termination_condition(
                 lambda conv: sum(1 for msg in conv if msg.role.value == "user") >= 10
             )
@@ -219,7 +228,7 @@ class FoundryBankingOrchestrator:
         )
         
         self._initialized = True
-        self.logger.info(f"✅ Foundry Banking Orchestrator initialized (mode: {'foundry' if self.use_foundry else 'azure_openai'})")
+        self.logger.info(f"✅ Foundry Banking Orchestrator initialized (foundry_mode={self.use_foundry}, using Azure OpenAI for handoffs)")
     
     async def process_conversation(self, user_id: str, conversation_messages: list, session_id: str = None) -> dict:
         """
@@ -421,6 +430,90 @@ async def get_existing_agent_ids(
     return agent_ids
 
 
+async def create_persistent_foundry_agents(
+    project_endpoint: str,
+    credential: AzureCliCredential,
+    model_deployment_name: str
+) -> tuple[ChatAgent, ChatAgent, ChatAgent, ChatAgent, ChatAgent]:
+    """
+    Create persistent agents in Microsoft Foundry using AgentManager, then wrap them
+    with ChatAgent for use in the orchestrator workflow.
+    
+    This creates actual Foundry-hosted agents that are visible in the Foundry UI
+    and persist across sessions.
+    
+    Note: Tools (Python functions) are NOT registered with Foundry - they are bound
+    to the local ChatAgent wrapper. Foundry stores the agent definition (name, 
+    instructions, model) while local tools execute at runtime.
+    
+    Args:
+        project_endpoint: The Azure AI Project endpoint URL
+        credential: Azure credential for authentication
+        model_deployment_name: The model deployment name to use
+        
+    Returns:
+        Tuple of (coordinator, crm_agent, cio_agent, funds_agent, news_agent)
+    """
+    print(f"\n🔧 Creating persistent Foundry agents...")
+    print(f"   Agents will be visible in Foundry UI")
+    print(f"   Tools are bound locally (not registered with Foundry)")
+    print()
+    
+    agents = []
+    
+    # Use AgentManager to create persistent agents in Foundry
+    async with AgentManager() as manager:
+        for agent_key in ["coordinator", "crm_agent", "cio_agent", "funds_agent", "news_agent"]:
+            agent_def = AGENT_DEFINITIONS[agent_key]
+            
+            # Get tools for this agent (used locally, not sent to Foundry)
+            tools = None
+            if agent_key == "crm_agent":
+                tools = crm_functions
+            elif agent_key == "cio_agent":
+                tools = cio_functions
+            elif agent_key == "funds_agent":
+                tools = funds_functions
+            elif agent_key == "news_agent":
+                tools = news_functions
+            
+            agent_name = agent_def["name"]
+            
+            # Create persistent agent in Foundry via AgentManager
+            # Note: We don't pass tools here - Foundry stores the definition only
+            foundry_agent = await manager.create_agent(
+                agent_name=agent_name,
+                instructions=agent_def["instructions"],
+                model=model_deployment_name
+                # tools are NOT passed - they're local Python functions
+            )
+            
+            print(f"✅ Created in Foundry: {foundry_agent['name']} (ID: {foundry_agent['id']})")
+            
+            # Now create a ChatAgent wrapper using AzureAIClient to use this Foundry agent
+            client = AzureAIClient(
+                project_endpoint=project_endpoint,
+                model_deployment_name=model_deployment_name,
+                async_credential=credential,
+                agent_name=agent_name,
+                use_latest_version=True,  # Use the version we just created
+                should_cleanup_agent=False
+            )
+            
+            # Create ChatAgent that references the Foundry agent
+            # Tools are bound here for local execution
+            agent = client.create_agent(
+                name=agent_key,
+                instructions=agent_def["instructions"],
+                tools=tools
+            )
+            
+            agents.append(agent)
+    
+    print(f"\n✅ All {len(agents)} agents created and registered in Foundry")
+    return tuple(agents)
+
+
 async def create_foundry_agents(
     project_endpoint: str,
     credential: AzureCliCredential,
@@ -437,6 +530,9 @@ async def create_foundry_agents(
     - agent_name: Name to use when creating/finding agents in Foundry
     - agent_version: Specific version to use (e.g., "1.0", "2.0")
     - use_latest_version: If True, uses the latest existing version if available
+    
+    Note: This creates in-memory agent wrappers that reference Foundry agents.
+    To create persistent agents visible in Foundry UI, use --new flag with --foundry.
     
     Args:
         project_endpoint: The Azure AI Project endpoint URL
@@ -553,7 +649,7 @@ async def main():
     
     parser = argparse.ArgumentParser(description="Moneta Banking Multi-Agent Orchestrator")
     parser.add_argument("--foundry", action="store_true", help="Use Microsoft Foundry mode (hosted agents)")
-    parser.add_argument("--new", action="store_true", help="Create new agents instead of reusing existing")
+    parser.add_argument("--new", action="store_true", help="Create new persistent agents in Foundry (requires --foundry)")
     parser.add_argument("--version", type=str, default=None, help="Specific agent version to use (e.g., 1.0)")
     parser.add_argument("--latest", action="store_true", default=True, help="Use latest existing version (default)")
     parser.add_argument("--force-new-version", action="store_true", help="Create new version even if agents exist")
@@ -569,8 +665,9 @@ async def main():
     # Clear the console
     os.system('cls' if os.name=='nt' else 'clear')
     
-    # Load environment variables from parent directory (where .env is located)
-    env_path = Path(__file__).parent.parent / ".env"
+    # Load environment variables from backend directory (where .env is located)
+    # Path: orchestrators -> foundry -> backend/.env
+    env_path = Path(__file__).parent.parent.parent / ".env"
     load_dotenv(env_path)
     
     # Configuration - support multiple environment variable names
@@ -578,6 +675,7 @@ async def main():
     foundry_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
     deployment_name = (
         os.getenv("AZURE_OPENAI_DEPLOYMENT") or 
+        os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or
         os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME") or 
         os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4o-mini")
     )
@@ -603,16 +701,25 @@ async def main():
             
             if use_foundry:
                 # Foundry mode - use AzureAIClient (v2 API) with hosted agents
-                # Create or reuse Foundry-hosted agents with version support
-                coordinator, crm_agent, cio_agent, funds_agent, news_agent = await create_foundry_agents(
-                    project_endpoint=endpoint,
-                    credential=credential,
-                    model_deployment_name=deployment_name,
-                    use_existing=use_existing,
-                    agent_version=agent_version,
-                    use_latest_version=use_latest_version,
-                    force_new_version=force_new_version
-                )
+                if not use_existing:
+                    # --new flag: Create persistent agents in Foundry (visible in UI)
+                    print("📝 Creating new persistent agents in Foundry...")
+                    coordinator, crm_agent, cio_agent, funds_agent, news_agent = await create_persistent_foundry_agents(
+                        project_endpoint=endpoint,
+                        credential=credential,
+                        model_deployment_name=deployment_name
+                    )
+                else:
+                    # Reuse existing Foundry-hosted agents with version support
+                    coordinator, crm_agent, cio_agent, funds_agent, news_agent = await create_foundry_agents(
+                        project_endpoint=endpoint,
+                        credential=credential,
+                        model_deployment_name=deployment_name,
+                        use_existing=use_existing,
+                        agent_version=agent_version,
+                        use_latest_version=use_latest_version,
+                        force_new_version=force_new_version
+                    )
                 
                 # Run the workflow
                 await run_workflow(
@@ -672,12 +779,14 @@ async def run_workflow(
     
     # Build the handoff workflow using HandoffBuilder
     # The framework maintains full conversation history across all agent interactions
+    # auto_register_handoff_tools(True) synthesizes handoff_to_X tools for the coordinator
     workflow = (
         HandoffBuilder(
             name="moneta_banking_handoff",
             participants=[coordinator, crm_agent, cio_agent, funds_agent, news_agent],
         )
         .set_coordinator(coordinator)
+        .auto_register_handoff_tools(True)  # This adds handoff_to_X tools to coordinator
         .with_termination_condition(
             lambda conv: sum(1 for msg in conv if msg.role.value == "user") >= 10
         )

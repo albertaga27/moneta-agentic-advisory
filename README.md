@@ -4,9 +4,9 @@
 
 Moneta is an AI-powered assistant designed to empower insurance and banking advisors. This Solution Accelerator provides a chat interface where advisors can interact with various AI agents specialized in different domains such as insurance policies, CRM, product information, funds, CIO insights, and news.
 
-## 🚀 Agent Framework & Azure AI Foundry
+## 🚀 Agent Framework & Azure AI Foundry (optional)
 
-Moneta uses the **Microsoft Agent Framework** to orchestrate **native Azure AI Foundry agents**:
+Moneta uses the **Microsoft Agent Framework** to orchestrate Agents:
 
 * [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) - Multi-agent orchestration with HandoffBuilder pattern
 * [Azure AI Foundry](https://ai.azure.com/) - Native hosted agents with versioning support
@@ -28,31 +28,14 @@ Moneta supports two agent hosting modes:
 | **Azure OpenAI** (default) | Agents run in-memory using `AzureOpenAIChatClient`. Fast startup, no persistence. | `python -m foundry.orchestrators.foundry_banking_orchestrator` |
 | **Azure AI Foundry** (optional) | Agents are persisted to Azure AI Foundry with versioning. Visible in Foundry UI. | `python -m foundry.orchestrators.foundry_banking_orchestrator --foundry --new` |
 
+Use the ENV variable USE_FOUNDRY= True or False
+
+
 ### Foundry Handoff Pattern - Key Insight
 
 > **⚠️ Critical Architecture Note for Foundry-Hosted Agents**
 > 
-> The key insight is that `auto_register_handoff_tools(True)` needs to work at runtime, but the Foundry agent's model already has the handoff tool schemas baked in at creation time. The problem is the **HandoffBuilder can't inject the actual handoff functions into Foundry agents because they're hosted remotely**.
-
-#### The Problem
-
-When using Foundry-hosted agents, the coordinator agent called `handoff_to_ins-crm-agent` as a tool, but the local framework returned:
-```
-Error: Requested function "handoff_to_ins-crm-agent" not found.
-```
-
-This happened because:
-1. **Tool schemas were registered with Foundry** (so the model knew about the tools)
-2. **But no callable handoff functions were bound locally** (so the framework couldn't execute them)
-
-#### The Solution
-
-`tool_schema_utils.py` provides two functions to solve this:
-
-| Function | Purpose |
-|----------|---------|
-| `create_handoff_tool_schemas()` | Creates `FunctionTool` schemas to register with Foundry |
-| `create_handoff_tools()` | Creates callable Python functions decorated with `@ai_function` |
+> The key insight is that Agent Framework Handoff: `auto_register_handoff_tools(True)` needs to work at runtime, but the Foundry agent's model already has the handoff tool schemas baked in at creation time. The problem is the **HandoffBuilder can't inject the actual handoff functions into Foundry agents because they're hosted remotely**!
 
 The callable handoff tools:
 - Match the schema pattern used by HandoffBuilder: `handoff_to_<agent_name>`
@@ -62,6 +45,7 @@ The callable handoff tools:
 **For Foundry-hosted agents, you need BOTH:**
 1. **Tool schemas** (`FunctionTool`) - Registered with Foundry so the model knows about them
 2. **Callable functions** (`@ai_function`) - Bound locally so the framework can execute them
+
 
 ### Solution Screenshots
 

@@ -3,6 +3,15 @@ Consolidated tracing setup for Azure AI Foundry.
 
 Uses Agent Framework's setup_observability for proper span nesting.
 Sends traces to Azure Application Insights connected to Foundry project.
+
+Foundry UI requires specific OpenTelemetry GenAI semantic conventions:
+- gen_ai.conversation.id: Session/thread ID for trace correlation (CRITICAL)
+- gen_ai.agent.id: Unique agent identifier
+- gen_ai.agent.name: Human-readable agent name
+- gen_ai.operation.name: 'invoke_agent' for agent calls
+- gen_ai.provider.name: 'microsoft.agent_framework'
+
+See: https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/
 """
 
 import os
@@ -22,6 +31,7 @@ logging.getLogger("azure.monitor.opentelemetry.exporter.export").setLevel(loggin
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
 _TRACING_CONFIGURED = False
+_CONVERSATION_ID_HOLDER = {}  # Thread-safe holder for conversation ID propagation
 
 
 def _get_foundry_appinsights_connection_string() -> str:
@@ -166,6 +176,97 @@ def get_tracer(name: str = __name__):
     except ImportError:
         from opentelemetry import trace
         return trace.get_tracer(name)
+
+
+def set_conversation_context(conversation_id: str, user_id: str = None, mode: str = None):
+    """
+    Set the conversation context for attribute propagation to child spans.
+    
+    This stores the conversation ID and other attributes that should be
+    propagated to all child spans within this conversation context.
+    Required for Foundry UI to properly display agent-level traces.
+    
+    Args:
+        conversation_id: The unique conversation/session ID
+        user_id: Optional user identifier
+        mode: Optional mode indicator (e.g., 'foundry' or 'azure_openai')
+    """
+    import threading
+    thread_id = threading.current_thread().ident
+    _CONVERSATION_ID_HOLDER[thread_id] = {
+        "gen_ai.conversation.id": conversation_id,
+        "session.id": conversation_id,
+    }
+    if user_id:
+        _CONVERSATION_ID_HOLDER[thread_id]["user.id"] = user_id
+    if mode:
+        _CONVERSATION_ID_HOLDER[thread_id]["session.mode"] = mode
+
+
+def get_conversation_context() -> dict:
+    """
+    Get the current conversation context for attribute propagation.
+    
+    Returns:
+        Dictionary of attributes to propagate to child spans
+    """
+    import threading
+    thread_id = threading.current_thread().ident
+    return _CONVERSATION_ID_HOLDER.get(thread_id, {})
+
+
+def clear_conversation_context():
+    """Clear the conversation context after processing is complete."""
+    import threading
+    thread_id = threading.current_thread().ident
+    if thread_id in _CONVERSATION_ID_HOLDER:
+        del _CONVERSATION_ID_HOLDER[thread_id]
+
+
+def create_foundry_span(tracer, name: str, conversation_id: str, agent_name: str = None, 
+                        agent_id: str = None, model: str = None, **extra_attributes):
+    """
+    Create a span with all required Foundry attributes for proper trace correlation.
+    
+    This is a helper function to create spans that will be properly displayed
+    in the Foundry UI at the agent level.
+    
+    Args:
+        tracer: The OpenTelemetry tracer
+        name: Span name
+        conversation_id: The conversation/session ID (CRITICAL for Foundry)
+        agent_name: Human-readable agent name
+        agent_id: Unique agent identifier
+        model: Model deployment name
+        **extra_attributes: Additional attributes to add
+        
+    Returns:
+        A context manager for the span
+    """
+    from opentelemetry.trace import SpanKind
+    
+    # Build required attributes per OpenTelemetry GenAI semantic conventions
+    attributes = {
+        "gen_ai.conversation.id": conversation_id,  # Critical for Foundry trace correlation
+        "gen_ai.provider.name": "microsoft.agent_framework",
+        "session.id": conversation_id,
+    }
+    
+    if agent_name:
+        attributes["gen_ai.agent.name"] = agent_name
+    if agent_id:
+        attributes["gen_ai.agent.id"] = agent_id
+    if model:
+        attributes["gen_ai.request.model"] = model
+    
+    # Merge extra attributes
+    attributes.update(extra_attributes)
+    
+    return tracer.start_as_current_span(
+        name,
+        kind=SpanKind.INTERNAL,
+        attributes=attributes
+    )
 
 
 # Backward compatibility - simple tracing manager stub

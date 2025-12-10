@@ -232,6 +232,45 @@ def functions_to_tool_schemas(functions: list[Callable]) -> list[FunctionTool]:
     return [function_to_tool_schema(func) for func in functions]
 
 
+def create_handoff_tool_schemas(agent_names: list[str]) -> list[FunctionTool]:
+    """
+    Create FunctionTool schemas for handoff tools.
+    
+    The HandoffBuilder pattern uses tools named 'handoff_to_<agent_name>' to route
+    requests to specialist agents. This function creates the tool schemas so they
+    can be registered with the coordinator agent in Foundry.
+    
+    Args:
+        agent_names: List of agent names to create handoff tools for
+                    (e.g., ["ins-crm-agent", "ins-policies-agent"])
+        
+    Returns:
+        List of FunctionTool instances for handoff tools
+    """
+    handoff_tools = []
+    
+    for agent_name in agent_names:
+        tool_name = f"handoff_to_{agent_name}"
+        
+        tool = FunctionTool(
+            name=tool_name,
+            description=f"Hand off the conversation to the {agent_name} specialist. Use this tool to transfer the user's request to {agent_name} for handling.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Optional message to include with the handoff"
+                    }
+                },
+                "required": []
+            }
+        )
+        handoff_tools.append(tool)
+    
+    return handoff_tools
+
+
 def tool_schemas_to_dicts(tools: list[FunctionTool]) -> list[dict]:
     """
     Convert FunctionTool instances to dictionaries for JSON serialization.
@@ -243,6 +282,49 @@ def tool_schemas_to_dicts(tools: list[FunctionTool]) -> list[dict]:
         List of tool dictionaries
     """
     return [tool.as_dict() for tool in tools]
+
+
+def create_handoff_tools(agent_names: list[str]) -> list:
+    """
+    Create actual callable handoff tool functions for the coordinator.
+    
+    When using Foundry-hosted agents, the HandoffBuilder's auto_register_handoff_tools
+    cannot dynamically inject tools into the remote agent. Instead, we need to:
+    1. Register tool schemas with Foundry (via create_handoff_tool_schemas)
+    2. Bind actual callable functions locally (via this function)
+    
+    This function creates Python functions decorated with @ai_function that match
+    the handoff tool schemas registered with Foundry. When the Foundry model calls
+    handoff_to_<agent_name>, the local framework can execute the matching function.
+    
+    Args:
+        agent_names: List of agent names to create handoff tools for
+                    (e.g., ["ins-crm-agent", "ins-policies-agent"])
+        
+    Returns:
+        List of callable AIFunction instances for handoff tools
+    """
+    from agent_framework import ai_function
+    
+    handoff_tools = []
+    
+    for agent_name in agent_names:
+        tool_name = f"handoff_to_{agent_name}"
+        description = f"Hand off the conversation to the {agent_name} specialist. Use this tool to transfer the user's request to {agent_name} for handling."
+        
+        # Create the handoff function with proper name binding
+        # The function body returns a deterministic acknowledgement like HandoffBuilder does
+        def make_handoff_fn(name: str, target: str):
+            @ai_function(name=name, description=f"Handoff to the {target} agent.")
+            def handoff_fn(message: str = "") -> str:
+                """Hand off the conversation to a specialist agent."""
+                return f"Handoff to {target}"
+            return handoff_fn
+        
+        handoff_fn = make_handoff_fn(tool_name, agent_name)
+        handoff_tools.append(handoff_fn)
+    
+    return handoff_tools
 
 
 # Test the conversion if run directly

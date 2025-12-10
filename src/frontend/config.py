@@ -7,12 +7,12 @@ INS_PREDEFINED_QUESTIONS = [
 ]
 
 INS_AGENTS = {
-    'crm_insurance_agent': {
+    'ins-crm-agent': {
         'emoji': '👥', 
         'color': '#17a2b8',
         'description': 'Access and retrieve customer information from the company\'s database. It specifically focuses on insurance-related client data, such as policies, coverages, and premiums, but will only provide information when given a specific client\'s name or ID.'
     },
-    'policies_agent': {
+    'ins-policies-agent': {
         'emoji': '🔍', 
         'color': '#ffc107',
         'description': 'Dedicated tool for answering general questions about investment funds and ETFs. Unlike the CRM Agent which handles client-specific data, this agent responds to general product inquiries by searching through an AI-powered knowledge base. It\'s designed to provide accurate product information, details about fund offerings, and general investment conditions.'
@@ -32,22 +32,22 @@ BANK_PREDEFINED_QUESTIONS = [
 ]
 
 BANK_AGENTS = {
-    'crm_banking_agent': {
+    'bank-crm-agent': {
         'emoji': '👥', 
         'color': '#17a2b8',
         'description': 'Access and retrieve customer information from the company\'s database. It specifically focuses on insurance-related client data, such as policies, coverages, and premiums, but will only provide information when given a specific client\'s name or ID.'
     },
-    'funds_agent': {
+    'bank-funds-agent': {
         'emoji': '💰', 
         'color': '#007bff',
         'description': 'Provides fund analysis and investment recommendations. It searches through internal bank documents to retrieve the institution\'s official investment views, research findings, and recommendations. This agent is designed to help advisors make informed decisions about their clients\' investments.'
     },
-    'cio_agent': {
+    'bank-cio-agent': {
         'emoji': '📈', 
         'color': '#ffc107',
         'description': 'Provides access to official investment research and analysis from Chief Investment Office (CIO). It searches through internal bank documents to retrieve the institution\'s official investment views, research findings, and recommendations.'
     },
-    'news_agent': {
+    'bank-news-agent': {
         'emoji': '📰', 
         'color': '#6c757d',
         'description': 'Automatically collects and organizes the latest investment news from Morningstar for your portfolio positions. It helps you stay informed about your investments by gathering relevant articles, including their titles, descriptions, categories, and publication details, all presented in an organized format for easy review.'

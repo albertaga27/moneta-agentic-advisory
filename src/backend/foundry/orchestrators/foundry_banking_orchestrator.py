@@ -54,30 +54,32 @@ _env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(_env_path)
 
 # Setup tracing for App Insights + Foundry UI
-from tracing import setup_tracing, get_tracer
+from tracing import setup_tracing, get_tracer, set_conversation_context, clear_conversation_context
 setup_tracing()
 _tracer = get_tracer("moneta-orchestrator")
 
 
-# Agent definitions for Foundry mode
+# Agent definitions
+# Names must be valid for Foundry API: alphanumeric + hyphens, no underscores
+# Using 'bank-' prefix to distinguish from insurance agents
 AGENT_DEFINITIONS = {
-    "coordinator": {
-        "name": "moneta-banking-coordinator",
+    "bank-coordinator": {
+        "name": "bank-coordinator",
         "instructions": (
             "You are the Moneta Banking Coordinator. Analyze customer requests and route them to the appropriate specialist:\n"
-            "- crm_banking_agent: For client data, portfolio information, account details, customer inquiries. "
+            "- bank-crm-agent: For client data, portfolio information, account details, customer inquiries. "
             "Use when the request mentions a specific client name or ID.\n"
-            "- cio_agent: For investment research, market analysis, CIO views, strategic investment recommendations.\n"
-            "- funds_agent: For information about funds, ETFs, fund performance, and investment products.\n"
-            "- news_agent: For fetching latest investment news for specific stock positions/tickers.\n"
+            "- bank-cio-agent: For investment research, market analysis, CIO views, strategic investment recommendations.\n"
+            "- bank-funds-agent: For information about funds, ETFs, fund performance, and investment products.\n"
+            "- bank-news-agent: For fetching latest investment news for specific stock positions/tickers.\n"
             "\n"
             "When you receive a request, immediately call the matching handoff tool "
-            "(handoff_to_crm_banking_agent, handoff_to_cio_agent, handoff_to_funds_agent, or handoff_to_news_agent) without explaining."
+            "(handoff_to_bank-crm-agent, handoff_to_bank-cio-agent, handoff_to_bank-funds-agent, or handoff_to_bank-news-agent) without explaining."
         ),
         "description": "Moneta Banking Coordinator - routes requests to specialist agents"
     },
-    "crm_banking_agent": {
-        "name": "moneta-crm-banking-agent",
+    "bank-crm-agent": {
+        "name": "bank-crm-agent",
         "instructions": (
             "You are a CRM specialist. Help with client data and portfolio information. "
             "Use your CRM functions to retrieve accurate customer data. "
@@ -86,8 +88,8 @@ AGENT_DEFINITIONS = {
         ),
         "description": "CRM Banking Agent - handles client data and portfolio information"
     },
-    "cio_agent": {
-        "name": "moneta-cio-agent",
+    "bank-cio-agent": {
+        "name": "bank-cio-agent",
         "instructions": (
             "You are a Chief Investment Office specialist. Provide investment research and strategic insights. "
             "Use the search function to find relevant CIO views and market analysis. "
@@ -95,8 +97,8 @@ AGENT_DEFINITIONS = {
         ),
         "description": "CIO Agent - provides investment research and market analysis"
     },
-    "funds_agent": {
-        "name": "moneta-funds-agent",
+    "bank-funds-agent": {
+        "name": "bank-funds-agent",
         "instructions": (
             "You are a Funds specialist. Provide information about investment funds and ETFs. "
             "Use the search function to find relevant fund information. "
@@ -104,8 +106,8 @@ AGENT_DEFINITIONS = {
         ),
         "description": "Funds Agent - provides funds and ETF information"
     },
-    "news_agent": {
-        "name": "moneta-news-agent",
+    "bank-news-agent": {
+        "name": "bank-news-agent",
         "instructions": (
             "You are a News specialist for Moneta Banking. "
             "You fetch and analyze the latest investment news for specific stock positions. "
@@ -144,7 +146,7 @@ class FoundryBankingOrchestrator:
         # Configuration from environment
         self.openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         self.openai_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
-        
+
         self.foundry_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
 
         # Choose endpoint and deployment based on mode
@@ -161,38 +163,47 @@ class FoundryBankingOrchestrator:
         if self._initialized:
             return
         
-        # Validate Azure OpenAI endpoint is available
-        if not self.openai_endpoint:
-            raise ValueError(
-                "AZURE_OPENAI_ENDPOINT is required for the orchestrator workflow. "
-                "The HandoffBuilder requires Azure OpenAI for proper tool calling support."
-            )
-        
         credential = AzureCliCredential()
         
-        # Always use AzureOpenAIChatClient for the orchestrator workflow
-        # because Foundry-hosted agents (AzureAIClient) don't properly support
-        # tool calling with synthesized handoff tools.
-        # 
-        # The --foundry flag now primarily affects:
-        # 1. Logging/tracing to indicate Foundry mode
-        # 2. When combined with --new, agents are persisted to Foundry via AgentManager
-        #
-        # But the actual workflow always uses AzureOpenAIChatClient for reliable handoffs.
-        self.logger.info(f"Using Azure OpenAI endpoint for workflow: {self.openai_endpoint}")
-        chat_client = AzureOpenAIChatClient(
-            endpoint=self.openai_endpoint,
-            deployment_name=self.openai_deployment_name,
-            credential=credential
-        )
-        coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
+        if self.use_foundry:
+            # Foundry mode - use hosted agents via AzureAIClient
+            if not self.foundry_endpoint:
+                raise ValueError(
+                    "AZURE_AI_PROJECT_ENDPOINT or PROJECT_ENDPOINT is required for Foundry mode. "
+                    "Set use_foundry=False to use Azure OpenAI mode instead."
+                )
+            
+            self.logger.info(f"Using Foundry endpoint for workflow: {self.foundry_endpoint}")
+            
+            # Use existing Foundry-hosted agents (requires agents to be pre-created)
+            coordinator, crm_agent, cio_agent, funds_agent, news_agent = await create_foundry_agents(
+                project_endpoint=self.foundry_endpoint,
+                credential=credential,
+                model_deployment_name=self.foundry_deployment_name,
+                use_latest_version=True
+            )
+        else:
+            # Azure OpenAI mode - use in-memory agents
+            if not self.openai_endpoint:
+                raise ValueError(
+                    "AZURE_OPENAI_ENDPOINT is required for Azure OpenAI mode. "
+                    "Set use_foundry=True to use Foundry mode instead."
+                )
+            
+            self.logger.info(f"Using Azure OpenAI endpoint for workflow: {self.openai_endpoint}")
+            chat_client = AzureOpenAIChatClient(
+                endpoint=self.openai_endpoint,
+                deployment_name=self.openai_deployment_name,
+                credential=credential
+            )
+            coordinator, crm_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
         
         # Build the handoff workflow with auto-registered handoff tools
         # auto_register_handoff_tools(True) synthesizes handoff_to_X tools for the coordinator
         self._workflow = (
             HandoffBuilder(
                 name="moneta_banking_handoff",
-                participants=[coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent],
+                participants=[coordinator, crm_agent, cio_agent, funds_agent, news_agent],
             )
             .set_coordinator(coordinator)
             .auto_register_handoff_tools(True)  # This adds handoff_to_X tools to coordinator
@@ -257,11 +268,24 @@ class FoundryBankingOrchestrator:
             # Create a session-level tracing span
             from opentelemetry.trace import SpanKind
             
+            # Set conversation context for attribute propagation to child agent spans
+            # This is critical for Foundry UI to display traces at the agent level
+            set_conversation_context(
+                conversation_id=session_id,
+                user_id=user_id,
+                mode="foundry" if self.use_foundry else "azure_openai"
+            )
+            
             with _tracer.start_as_current_span(
                 "banking_conversation",
                 kind=SpanKind.SERVER,
                 attributes={
-                    "gen_ai.conversation.id": session_id,
+                    # GenAI semantic convention attributes required by Foundry
+                    "gen_ai.conversation.id": session_id,  # Critical for Foundry trace correlation
+                    "gen_ai.operation.name": "invoke_agent",
+                    "gen_ai.provider.name": "microsoft.agent_framework",
+                    "gen_ai.agent.name": "banking_coordinator",
+                    # Additional context attributes
                     "session.id": session_id,
                     "user.id": user_id,
                     "session.mode": "foundry" if self.use_foundry else "azure_openai",
@@ -271,7 +295,7 @@ class FoundryBankingOrchestrator:
                 # Run the workflow with the full conversation history
                 # The workflow will use all messages as context
                 final_response = ""
-                responding_agent = "coordinator"
+                responding_agent = "bank-coordinator"
                 
                 async for event in self._workflow.run_stream(chat_messages):
                     # Check RequestInfoEvent which contains HandoffUserInputRequest with the conversation
@@ -292,7 +316,7 @@ class FoundryBankingOrchestrator:
                     elif isinstance(event, AgentRunEvent):
                         if event.data and event.data.text:
                             final_response = event.data.text
-                            responding_agent = event.executor_id or "coordinator"
+                            responding_agent = event.executor_id or "bank-coordinator"
                             self.logger.info(f"Captured from AgentRunEvent '{responding_agent}': {len(final_response)} chars")
                     
                     # Also check WorkflowOutputEvent for any additional output
@@ -324,6 +348,9 @@ class FoundryBankingOrchestrator:
                 'name': 'coordinator',
                 'content': f'I encountered an error while processing your request. Please try again.'
             }
+        finally:
+            # Clean up conversation context to prevent leakage between requests
+            clear_conversation_context()
 
 
 def create_specialist_agents(chat_client: AzureOpenAIChatClient) -> tuple[ChatAgent, ChatAgent, ChatAgent, ChatAgent, ChatAgent]:
@@ -335,50 +362,50 @@ def create_specialist_agents(chat_client: AzureOpenAIChatClient) -> tuple[ChatAg
         chat_client: The Azure OpenAI chat client
         
     Returns:
-        Tuple of (coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent)
+        Tuple of (coordinator, crm_agent, cio_agent, funds_agent, news_agent)
     """
     
     # Coordinator agent - routes requests to specialists
     coordinator = chat_client.create_agent(
-        instructions=AGENT_DEFINITIONS["coordinator"]["instructions"],
-        name="coordinator"
+        instructions=AGENT_DEFINITIONS["bank-coordinator"]["instructions"],
+        name="bank-coordinator"
     )
     
     # CRM Banking Agent - handles client data
-    crm_banking_agent = chat_client.create_agent(
-        instructions=AGENT_DEFINITIONS["crm_banking_agent"]["instructions"],
-        name="crm_banking_agent",
+    crm_agent = chat_client.create_agent(
+        instructions=AGENT_DEFINITIONS["bank-crm-agent"]["instructions"],
+        name="bank-crm-agent",
         tools=crm_functions
     )
     
     # CIO Agent - handles investment research
     cio_agent = chat_client.create_agent(
-        instructions=AGENT_DEFINITIONS["cio_agent"]["instructions"],
-        name="cio_agent",
+        instructions=AGENT_DEFINITIONS["bank-cio-agent"]["instructions"],
+        name="bank-cio-agent",
         tools=cio_functions
     )
     
     # Funds Agent - handles funds and ETFs
     funds_agent = chat_client.create_agent(
-        instructions=AGENT_DEFINITIONS["funds_agent"]["instructions"],
-        name="funds_agent",
+        instructions=AGENT_DEFINITIONS["bank-funds-agent"]["instructions"],
+        name="bank-funds-agent",
         tools=funds_functions
     )
     
     # News Agent - fetches investment news
     news_agent = chat_client.create_agent(
-        instructions=AGENT_DEFINITIONS["news_agent"]["instructions"],
-        name="news_agent",
+        instructions=AGENT_DEFINITIONS["bank-news-agent"]["instructions"],
+        name="bank-news-agent",
         tools=news_functions
     )
     
     print(f"✅ Created coordinator agent: {coordinator.name}")
-    print(f"✅ Created CRM Banking agent: {crm_banking_agent.name}")
+    print(f"✅ Created CRM Banking agent: {crm_agent.name}")
     print(f"✅ Created CIO agent: {cio_agent.name}")
     print(f"✅ Created Funds agent: {funds_agent.name}")
     print(f"✅ Created News agent: {news_agent.name}")
     
-    return coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent
+    return coordinator, crm_agent, cio_agent, funds_agent, news_agent
 
 
 async def get_existing_agent_ids(
@@ -426,7 +453,7 @@ async def create_persistent_foundry_agents(
         model_deployment_name: The model deployment name to use
         
     Returns:
-        Tuple of (coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent)
+        Tuple of (coordinator, crm_agent, cio_agent, funds_agent, news_agent)
     """
     print(f"\n🔧 Creating persistent Foundry agents...")
     print(f"   Agents will be visible in Foundry UI")
@@ -435,29 +462,43 @@ async def create_persistent_foundry_agents(
     
     agents = []
     
+    # Define specialist agent names for handoff tools
+    specialist_agent_names = ["bank-crm-agent", "bank-cio-agent", "bank-funds-agent", "bank-news-agent"]
+    
     # Use AgentManager to create persistent agents in Foundry
     async with AgentManager() as manager:
-        for agent_key in ["coordinator", "crm_banking_agent", "cio_agent", "funds_agent", "news_agent"]:
+        for agent_key in ["bank-coordinator", "bank-crm-agent", "bank-cio-agent", "bank-funds-agent", "bank-news-agent"]:
             agent_def = AGENT_DEFINITIONS[agent_key]
             
             # Get tools for this agent
             tools = None
-            if agent_key == "crm_banking_agent":
-                tools = crm_functions
-            elif agent_key == "cio_agent":
-                tools = cio_functions
-            elif agent_key == "funds_agent":
-                tools = funds_functions
-            elif agent_key == "news_agent":
-                tools = news_functions
-            
-            agent_name = agent_def["name"]
-            
-            # Convert Python functions to FunctionTool schemas for Foundry registration
             tool_schemas = None
-            if tools:
+            
+            if agent_key == "bank-coordinator":
+                # Coordinator needs handoff tools to route to specialists
+                from foundry.agents.tool_schema_utils import create_handoff_tool_schemas, create_handoff_tools
+                tool_schemas = create_handoff_tool_schemas(specialist_agent_names)
+                # Also create callable handoff tools for local binding
+                tools = create_handoff_tools(specialist_agent_names)
+                print(f"   📦 {agent_key}: Registering {len(tool_schemas)} handoff tools with Foundry")
+            elif agent_key == "bank-crm-agent":
+                tools = crm_functions
                 tool_schemas = functions_to_tool_schemas(tools)
                 print(f"   📦 {agent_key}: Registering {len(tool_schemas)} tools with Foundry")
+            elif agent_key == "bank-cio-agent":
+                tools = cio_functions
+                tool_schemas = functions_to_tool_schemas(tools)
+                print(f"   📦 {agent_key}: Registering {len(tool_schemas)} tools with Foundry")
+            elif agent_key == "bank-funds-agent":
+                tools = funds_functions
+                tool_schemas = functions_to_tool_schemas(tools)
+                print(f"   📦 {agent_key}: Registering {len(tool_schemas)} tools with Foundry")
+            elif agent_key == "bank-news-agent":
+                tools = news_functions
+                tool_schemas = functions_to_tool_schemas(tools)
+                print(f"   📦 {agent_key}: Registering {len(tool_schemas)} tools with Foundry")
+            
+            agent_name = agent_def["name"]
             
             # Create persistent agent in Foundry via AgentManager
             # Now passing tool schemas so Foundry knows about the tools
@@ -498,7 +539,6 @@ async def create_foundry_agents(
     project_endpoint: str,
     credential: AzureCliCredential,
     model_deployment_name: str,
-    use_existing: bool = True,
     agent_version: str | None = None,
     use_latest_version: bool = True,
     force_new_version: bool = False
@@ -518,34 +558,42 @@ async def create_foundry_agents(
         project_endpoint: The Azure AI Project endpoint URL
         credential: Azure credential for authentication
         model_deployment_name: The model deployment name to use
-        use_existing: If True, reuse existing agents; otherwise create new ones
         agent_version: Specific agent version to use (e.g., "1.0")
         use_latest_version: If True, use latest existing version in Foundry
         force_new_version: If True, create new version even if agent exists
         
     Returns:
-        Tuple of (coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent)
+        Tuple of (coordinator, crm_agent, cio_agent, funds_agent, news_agent)
     """
     agents = []
     
     # Log versioning configuration
     print(f"\n🔧 Agent Configuration:")
-    print(f"   use_existing: {use_existing}")
     print(f"   agent_version: {agent_version or 'auto'}")
     print(f"   use_latest_version: {use_latest_version}")
     print(f"   force_new_version: {force_new_version}")
     print()
     
-    for agent_key in ["coordinator", "crm_banking_agent", "cio_agent", "funds_agent", "news_agent"]:
+    # Define specialist agent names for handoff tools
+    specialist_agent_names = ["bank-crm-agent", "bank-cio-agent", "bank-funds-agent", "bank-news-agent"]
+    
+    for agent_key in ["bank-coordinator", "bank-crm-agent", "bank-cio-agent", "bank-funds-agent", "bank-news-agent"]:
         agent_def = AGENT_DEFINITIONS[agent_key]
         tools = None
-        if agent_key == "crm_banking_agent":
+        
+        if agent_key == "bank-coordinator":
+            # Coordinator needs handoff tools bound locally for execution
+            # The schemas are already registered with Foundry; this binds the callable functions
+            from foundry.agents.tool_schema_utils import create_handoff_tools
+            tools = create_handoff_tools(specialist_agent_names)
+            print(f"   📦 {agent_key}: Binding {len(tools)} handoff tools locally")
+        elif agent_key == "bank-crm-agent":
             tools = crm_functions
-        elif agent_key == "cio_agent":
+        elif agent_key == "bank-cio-agent":
             tools = cio_functions
-        elif agent_key == "funds_agent":
+        elif agent_key == "bank-funds-agent":
             tools = funds_functions
-        elif agent_key == "news_agent":
+        elif agent_key == "bank-news-agent":
             tools = news_functions
         
         agent_name = agent_def["name"]
@@ -681,18 +729,17 @@ async def main():
                 if not use_existing:
                     # --new flag: Create persistent agents in Foundry (visible in UI)
                     print("📝 Creating new persistent agents in Foundry...")
-                    coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent = await create_persistent_foundry_agents(
+                    coordinator, crm_agent, cio_agent, funds_agent, news_agent = await create_persistent_foundry_agents(
                         project_endpoint=endpoint,
                         credential=credential,
                         model_deployment_name=foundry_deployment_name
                     )
                 else:
                     # Reuse existing Foundry-hosted agents with version support
-                    coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent = await create_foundry_agents(
+                    coordinator, crm_agent, cio_agent, funds_agent, news_agent = await create_foundry_agents(
                         project_endpoint=endpoint,
                         credential=credential,
                         model_deployment_name=foundry_deployment_name,
-                        use_existing=use_existing,
                         agent_version=agent_version,
                         use_latest_version=use_latest_version,
                         force_new_version=force_new_version
@@ -700,7 +747,7 @@ async def main():
                 
                 # Run the workflow
                 await run_workflow(
-                    coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent,
+                    coordinator, crm_agent, cio_agent, funds_agent, news_agent,
                     use_foundry
                 )
             else:
@@ -712,11 +759,11 @@ async def main():
                 )
                 
                 # Create all agents
-                coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
+                coordinator, crm_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
                 
                 # Run the workflow
                 await run_workflow(
-                    coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent,
+                    coordinator, crm_agent, cio_agent, funds_agent, news_agent,
                     use_foundry
                 )
     
@@ -729,7 +776,7 @@ async def main():
 
 async def run_workflow(
     coordinator: ChatAgent,
-    crm_banking_agent: ChatAgent,
+    crm_agent: ChatAgent,
     cio_agent: ChatAgent,
     funds_agent: ChatAgent,
     news_agent: ChatAgent,
@@ -760,7 +807,7 @@ async def run_workflow(
     workflow = (
         HandoffBuilder(
             name="moneta_banking_handoff",
-            participants=[coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent],
+            participants=[coordinator, crm_agent, cio_agent, funds_agent, news_agent],
         )
         .set_coordinator(coordinator)
         .auto_register_handoff_tools(True)  # This adds handoff_to_X tools to coordinator

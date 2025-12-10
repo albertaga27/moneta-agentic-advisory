@@ -1,4 +1,4 @@
-# Moneta - an AI-Agentic Assistant for Insurance, Banking and Energy sector
+# Moneta - an AI-Agentic Assistant for Insurance and Banking
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/albertaga27/aoai-fsi-empowering-advisory-agentic) [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/albertaga27/aoai-fsi-empowering-advisory-agentic)
 
@@ -13,15 +13,79 @@ Moneta uses the **Microsoft Agent Framework** to orchestrate **native Azure AI F
 
 ### Key Architecture Features
 
-- **Native Foundry Agents**: Agents are hosted in Azure AI Foundry with automatic versioning and reuse
-- **HandoffBuilder Pattern**: Coordinator agent routes requests to specialist agents (CRM, CIO, Funds, News)
+- **HandoffBuilder Pattern**: Coordinator agent routes requests to specialist agents (CRM, CIO, Funds, News, Policies)
+- **Dual Mode Support**: Run with standard Azure OpenAI agents OR optionally with Azure AI Foundry hosted agents
 - **Conversation Memory**: Full conversation history is maintained across API calls via CosmosDB
 - **OpenTelemetry Tracing**: Built-in observability with Azure Application Insights integration
 - **Session-Level Tracing**: Custom spans for conversation turns and agent handoffs
 
-> **⚠️ Important Note on Handoff Tools**
+### Agent Hosting Modes
+
+Moneta supports two agent hosting modes:
+
+| Mode | Description | Command |
+|------|-------------|--------|
+| **Azure OpenAI** (default) | Agents run in-memory using `AzureOpenAIChatClient`. Fast startup, no persistence. | `python -m foundry.orchestrators.foundry_banking_orchestrator` |
+| **Azure AI Foundry** (optional) | Agents are persisted to Azure AI Foundry with versioning. Visible in Foundry UI. | `python -m foundry.orchestrators.foundry_banking_orchestrator --foundry --new` |
+
+### Foundry Handoff Pattern - Key Insight
+
+> **⚠️ Critical Architecture Note for Foundry-Hosted Agents**
 > 
-> Foundry-hosted agents (`AzureAIClient`) don't properly support tool calling with synthesized handoff tools - the model outputs tool names as text instead of calling them as functions. For this reason, the orchestrator workflow uses `AzureOpenAIChatClient` (Azure OpenAI) for reliable handoff execution, while Foundry is still used for agent persistence and versioning when using the `--foundry --new` flags.
+> The key insight is that `auto_register_handoff_tools(True)` needs to work at runtime, but the Foundry agent's model already has the handoff tool schemas baked in at creation time. The problem is the **HandoffBuilder can't inject the actual handoff functions into Foundry agents because they're hosted remotely**.
+
+#### The Problem
+
+When using Foundry-hosted agents, the coordinator agent called `handoff_to_ins-crm-agent` as a tool, but the local framework returned:
+```
+Error: Requested function "handoff_to_ins-crm-agent" not found.
+```
+
+This happened because:
+1. **Tool schemas were registered with Foundry** (so the model knew about the tools)
+2. **But no callable handoff functions were bound locally** (so the framework couldn't execute them)
+
+#### The Solution
+
+`tool_schema_utils.py` provides two functions to solve this:
+
+| Function | Purpose |
+|----------|---------|
+| `create_handoff_tool_schemas()` | Creates `FunctionTool` schemas to register with Foundry |
+| `create_handoff_tools()` | Creates callable Python functions decorated with `@ai_function` |
+
+The callable handoff tools:
+- Match the schema pattern used by HandoffBuilder: `handoff_to_<agent_name>`
+- Return a deterministic acknowledgement like `"Handoff to <agent_name>"`
+- Are bound locally to the coordinator's ChatAgent wrapper
+
+**For Foundry-hosted agents, you need BOTH:**
+1. **Tool schemas** (`FunctionTool`) - Registered with Foundry so the model knows about them
+2. **Callable functions** (`@ai_function`) - Bound locally so the framework can execute them
+
+### Solution Screenshots
+
+The following screenshots demonstrate the agents running:
+
+#### Moneta Frontend - Orchestrator and sub agents responses
+
+![Moneta Frontend](src/backend/testing/Screenshot%202025-12-10%20110948.png)
+
+This screenshot shows the `ins-coordinator` agent performing intent recognition and invoking the appropriate sub-agents. 
+
+#### Tracing - Full Agent Flow
+
+![Tracing Handoff](src/backend/testing/Screenshot%202025-12-10%20111045.png)
+
+This screenshot shows the **specialist agent's response** in the trace in Application Insights. After the handoff, the `ins-crm-agent` executes its tools (like `get_customer_insurance_data`) to fetch John Doe's policy information and returns the response. The trace captures the entire conversation flow, tool executions, and the final response sent back to the user.
+
+#### Tracing - AI Foundry (new)
+
+![AI Foundry (new)](src/backend/testing/Screenshot%202025-12-10%20111134.png)
+
+This screenshot shows the **orchestrator banking agent** in the Monitor section of the new Foundry UI. Traces are sourced from the Application Insights (Connected resource to Foundry project).
+
+
 
 ## Prerequisites
 
@@ -34,8 +98,8 @@ Moneta uses the **Microsoft Agent Framework** to orchestrate **native Azure AI F
 ## Features
 
 - **Microsoft Agent Framework**: Multi-agent orchestration with HandoffBuilder pattern
-- **Azure AI Foundry Integration**: Native hosted agents with versioning support
-- Multi-Use Case Support: Switch between insurance, banking and energy use cases
+- **Azure AI Foundry Integration**: Optional hosted agents with versioning support
+- Multi-Use Case Support: Switch between insurance and banking use cases
 - Agent Collaboration: Coordinator routes to specialists who collaborate to provide answers
 - Azure AD Authentication: Secure login with Microsoft Azure Active Directory
 - Conversation History: Access and continue previous conversations with full context
@@ -43,7 +107,8 @@ Moneta uses the **Microsoft Agent Framework** to orchestrate **native Azure AI F
 ## Implementation Details
 - Python 3.12 or higher
 - **Microsoft Agent Framework** with HandoffBuilder for multi-agent orchestration
-- **Azure AI Foundry** for native hosted agents with versioning
+- **Azure OpenAI** for agent inference (default mode)
+- **Azure AI Foundry** for optional hosted agents with versioning and persistence
 - Streamlit (frontend app - chatGPT style with conversation segregation and memory)
 - FastAPI (backend API with async support)
 - Microsoft Authentication Library (MSAL - if using authentication - optional)
@@ -56,29 +121,29 @@ Moneta uses the **Microsoft Agent Framework** to orchestrate **native Azure AI F
 
 ### Insurance
 
-- `CRM`: simulate fetching clients information from a CRM (DB, third-party API etc)
-- `Policies RAG`: vector search with AI Search on various public available policy documents (product information)
-- `Responder`: collects previous agents replies and respond to the user
+Uses the **HandoffBuilder** pattern with a coordinator that routes to specialist agents:
+
+| Agent Name | Description |
+|------------|-------------|
+| `ins-coordinator` | Routes user requests to appropriate specialist agents |
+| `ins-crm-agent` | Fetches client insurance information and policy data from CRM (simulated) |
+| `ins-policies-agent` | Vector search with AI Search on insurance policy documents and product information |
 
 ### Banking 
 
 Uses the **HandoffBuilder** pattern with a coordinator that routes to specialist agents:
 
-- `Coordinator`: Routes user requests to appropriate specialist agents
-- `CRM Agent`: Fetches client information and portfolio data from CRM (simulated)
-- `Funds Agent`: Vector search with AI Search on funds and ETF factsheets
-- `CIO Agent`: Vector search with AI Search on in-house investment views and recommendations
-- `News Agent`: RSS online feed search on stock news for portfolio positions
+| Agent Name | Description |
+|------------|-------------|
+| `bank-coordinator` | Routes user requests to appropriate specialist agents |
+| `bank-crm-agent` | Fetches client information and portfolio data from CRM (simulated) |
+| `bank-funds-agent` | Vector search with AI Search on funds and ETF factsheets |
+| `bank-cio-agent` | Vector search with AI Search on in-house investment views and recommendations |
+| `bank-news-agent` | RSS online feed search on stock news for portfolio positions |
 
-All agents are hosted as **native Azure AI Foundry agents** with automatic versioning.
+> **Note**: Agent names use hyphens (not underscores) to comply with Azure AI Foundry naming requirements: alphanumeric characters and hyphens only, max 63 characters.
 
-### Energy
-
-- `News`: energy realted news RSS
-- `Electricity`: Swiss electricity grid consumption and production data
-- `Weather`: simple weather forecast api search
-- `Insights`: Analyze other agents information input and provide insights and classification 
-- `Responder`: collects previous agents replies and respond to the user
+All agents can optionally be persisted to **Azure AI Foundry** with automatic versioning using the `--foundry --new` flags.
 
 
 ## Project structure
@@ -87,15 +152,19 @@ All agents are hosted as **native Azure AI Foundry agents** with automatic versi
   - backend
     - foundry
       - agents
-        - banking # Foundry agent definitions and functions
+        - banking # Banking agent definitions and functions
           - cio/ # CIO agent with AI Search functions
           - crm/ # CRM agent with client data functions
           - funds/ # Funds agent with AI Search functions
           - news/ # News agent with RSS feed functions
-        - insurance # agents files (legacy)
-        - energy # agents files (legacy)
+        - insurance # Insurance agent definitions and functions
+          - crm/ # CRM Insurance agent with client data functions
+          - policies/ # Policies agent with AI Search functions
+        - agent_management.py # Agent CRUD operations for Foundry
+        - tool_schema_utils.py # Utilities for tool schema generation
       - orchestrators
-        - foundry_banking_orchestrator.py # Main orchestrator with HandoffBuilder
+        - foundry_banking_orchestrator.py # Banking orchestrator with HandoffBuilder
+        - foundry_insurance_orchestrator.py # Insurance orchestrator with HandoffBuilder
     - app.py # FastAPI backend exposing API
 
   - frontend
@@ -106,7 +175,7 @@ All agents are hosted as **native Azure AI Foundry agents** with automatic versi
       - cio-index
       - funds-index
       - ins-index
-    - customer-profile
+    - customer-profiles
 
 - infra
   - bicep files
@@ -215,7 +284,7 @@ uv sync
 
 ### Usage
 
-1. **Select Use Case**: Choose between `fsi_insurance`, `fsi_banking`, `energy` from the sidebar
+1. **Select Use Case**: Choose between `fsi_insurance` or `fsi_banking` from the sidebar
 2. **Start a Conversation**: Click "Start New Conversation" or select an existing one
 3. **Chat**: Use the chat input to ask questions. Predefined questions are available in a dropdown
 4. **Agents Online**: View the available agents for the selected use case

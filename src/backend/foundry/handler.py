@@ -1,29 +1,50 @@
 import logging
 import json
+import os
 
 
 from foundry.orchestrators.deep_research_orchestrator import DeepResearchOrchestrator
+# Foundry orchestrators (hosted agents)
 from foundry.orchestrators.foundry_banking_orchestrator import FoundryBankingOrchestrator
 from foundry.orchestrators.foundry_insurance_orchestrator import FoundryInsuranceOrchestrator
+# OpenAI orchestrators (in-memory agents)
+from foundry.orchestrators.open_ai_banking_orchestrator import OpenAIBankingOrchestrator
+from foundry.orchestrators.open_ai_insurance_orchestrator import OpenAIInsuranceOrchestrator
+
 
 class Handler:
-    def __init__(self, history_db, use_foundry: bool = True):
+    def __init__(self, history_db, use_foundry: bool = None):
         self.logger = logging.getLogger(__name__)
         self.logger.debug("Agentic Handler init")
 
         self.history_db = history_db
-        self.use_foundry = use_foundry
+        
+        # Determine use_foundry from env variable if not explicitly provided
+        if use_foundry is None:
+            use_foundry_env = os.getenv("USE_FOUNDRY", "false").lower()
+            self.use_foundry = use_foundry_env in ("true", "1", "yes")
+        else:
+            self.use_foundry = use_foundry
+        
         self.orchestrators = {}
         
-        # Use FoundryInsuranceOrchestrator for fsi_insurance
-        self.orchestrators['fsi_insurance'] = FoundryInsuranceOrchestrator(use_foundry=self.use_foundry)
-        self.logger.info(f"Using FoundryInsuranceOrchestrator for fsi_insurance")
+        # Select orchestrator based on USE_FOUNDRY setting
+        if self.use_foundry:
+            # Use Foundry orchestrators (hosted agents in Microsoft Foundry)
+            self.orchestrators['fsi_insurance'] = FoundryInsuranceOrchestrator()
+            self.logger.info("Using FoundryInsuranceOrchestrator for fsi_insurance (Foundry hosted agents)")
+            
+            self.orchestrators['fsi_banking'] = FoundryBankingOrchestrator()
+            self.logger.info("Using FoundryBankingOrchestrator for fsi_banking (Foundry hosted agents)")
+        else:
+            # Use OpenAI orchestrators (in-memory agents with Azure OpenAI)
+            self.orchestrators['fsi_insurance'] = OpenAIInsuranceOrchestrator()
+            self.logger.info("Using OpenAIInsuranceOrchestrator for fsi_insurance (Azure OpenAI in-memory agents)")
+            
+            self.orchestrators['fsi_banking'] = OpenAIBankingOrchestrator()
+            self.logger.info("Using OpenAIBankingOrchestrator for fsi_banking (Azure OpenAI in-memory agents)")
         
-        #self.orchestrators['energy'] = EnergyOrchestrator()
-        
-        # Use FoundryBankingOrchestrator for fsi_banking
-        self.orchestrators['fsi_banking'] = FoundryBankingOrchestrator(use_foundry=self.use_foundry)
-        self.logger.info(f"Using FoundryBankingOrchestrator for fsi_banking (use_foundry: {self.use_foundry})")
+        self.logger.info(f"Handler initialized with USE_FOUNDRY={self.use_foundry}")
 
         self.orchestrators['deep_research'] = DeepResearchOrchestrator()
 

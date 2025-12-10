@@ -1,5 +1,5 @@
 """
-Moneta Insurance Orchestrator - Microsoft Foundry Implementation
+Moneta Insurance Orchestrator - Azure OpenAI In-Memory Implementation
 Multi-agent orchestration using HandoffBuilder pattern for insurance services.
 
 This orchestrator coordinates two specialized agents:
@@ -9,8 +9,8 @@ This orchestrator coordinates two specialized agents:
 The orchestration uses the Handoff pattern where a coordinator agent routes
 user requests to appropriate specialist agents.
 
-This implementation uses Microsoft Foundry with hosted agents (AzureAIClient).
-For Azure OpenAI in-memory agents, use OpenAIInsuranceOrchestrator instead.
+This implementation uses Azure OpenAI with in-memory agents (AzureOpenAIChatClient).
+For Foundry-hosted agents, use FoundryInsuranceOrchestrator instead.
 """
 
 import os
@@ -30,34 +30,24 @@ from agent_framework import (
     WorkflowEvent
 )
 from agent_framework._workflows._events import AgentRunEvent
-from agent_framework.azure import AzureAIAgentClient, AzureAIClient
+from agent_framework.azure import AzureOpenAIChatClient
 from azure.identity.aio import AzureCliCredential
-from azure.ai.projects.aio import AIProjectClient
-from azure.ai.projects.models import PromptAgentDefinition
 
 # Import specialist agent functions from insurance agents subfolder
 from foundry.agents.insurance.crm.crm_insurance_functions import crm_insurance_functions
 from foundry.agents.insurance.policies.policies_functions import policies_functions
 
-# Import tool schema utilities for Foundry registration
-from foundry.agents.tool_schema_utils import functions_to_tool_schemas
-
-# Import agent management for Foundry mode
-from foundry.agents.agent_management import AgentManager
-
 # Load environment
 _env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(_env_path)
 
-# Setup tracing for App Insights + Foundry UI
+# Setup tracing for App Insights
 from tracing import setup_tracing, get_tracer, set_conversation_context, clear_conversation_context
 setup_tracing()
-_tracer = get_tracer("moneta-foundry-insurance-orchestrator")
+_tracer = get_tracer("moneta-openai-insurance-orchestrator")
 
 
 # Agent definitions
-# Names must be valid for Foundry API: alphanumeric + hyphens, no underscores
-# Using 'ins-' prefix to distinguish from banking agents
 AGENT_DEFINITIONS = {
     "ins-coordinator": {
         "name": "ins-coordinator",
@@ -95,29 +85,29 @@ AGENT_DEFINITIONS = {
 }
 
 
-class FoundryInsuranceOrchestrator:
+class OpenAIInsuranceOrchestrator:
     """
-    Foundry Insurance Orchestrator with hosted agents.
+    Azure OpenAI Insurance Orchestrator with in-memory agents.
     
     This orchestrator uses Microsoft Agent Framework with HandoffBuilder pattern
-    for multi-agent coordination in insurance services using Microsoft Foundry.
+    for multi-agent coordination in insurance services using Azure OpenAI.
     """
     
     def __init__(self):
         """
-        Initialize the Foundry Insurance Orchestrator.
-        Uses Microsoft Foundry mode with hosted agents.
+        Initialize the Azure OpenAI Insurance Orchestrator.
+        Uses Azure OpenAI mode with in-memory agents.
         """
         import logging
         self.logger = logging.getLogger(__name__)
-        self.logger.debug("Foundry Insurance Orchestrator init")
+        self.logger.debug("OpenAI Insurance Orchestrator init")
         
         self._workflow = None
         self._initialized = False
         
         # Configuration from environment
-        self.foundry_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
-        self.foundry_deployment_name = os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4.1-mini")
+        self.openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        self.openai_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 
     async def _ensure_initialized(self):
         """Lazily initialize the workflow and agents."""
@@ -126,21 +116,19 @@ class FoundryInsuranceOrchestrator:
         
         credential = AzureCliCredential()
         
-        # Foundry mode - use hosted agents via AzureAIClient
-        if not self.foundry_endpoint:
+        # Azure OpenAI mode - use in-memory agents
+        if not self.openai_endpoint:
             raise ValueError(
-                "AZURE_AI_PROJECT_ENDPOINT or PROJECT_ENDPOINT is required for Foundry mode."
+                "AZURE_OPENAI_ENDPOINT is required for Azure OpenAI mode."
             )
         
-        self.logger.info(f"Using Foundry endpoint for workflow: {self.foundry_endpoint}")
-        
-        # Use existing Foundry-hosted agents (requires agents to be pre-created)
-        coordinator, crm_agent, policies_agent = await create_foundry_agents(
-            project_endpoint=self.foundry_endpoint,
-            credential=credential,
-            model_deployment_name=self.foundry_deployment_name,
-            use_latest_version=True
+        self.logger.info(f"Using Azure OpenAI endpoint for workflow: {self.openai_endpoint}")
+        chat_client = AzureOpenAIChatClient(
+            endpoint=self.openai_endpoint,
+            deployment_name=self.openai_deployment_name,
+            credential=credential
         )
+        coordinator, crm_agent, policies_agent = create_specialist_agents(chat_client)
         
         # Build the handoff workflow with auto-registered handoff tools
         self._workflow = (
@@ -157,7 +145,7 @@ class FoundryInsuranceOrchestrator:
         )
         
         self._initialized = True
-        self.logger.info("✅ Foundry Insurance Orchestrator initialized (Foundry hosted agents)")
+        self.logger.info("✅ OpenAI Insurance Orchestrator initialized (Azure OpenAI in-memory agents)")
     
     async def process_conversation(self, user_id: str, conversation_messages: list, session_id: str = None) -> dict:
         """
@@ -207,11 +195,10 @@ class FoundryInsuranceOrchestrator:
         try:
             from opentelemetry.trace import SpanKind
             
-            # Set conversation context for attribute propagation to child agent spans
             set_conversation_context(
                 conversation_id=session_id,
                 user_id=user_id,
-                mode="foundry"
+                mode="azure_openai"
             )
             
             with _tracer.start_as_current_span(
@@ -220,11 +207,11 @@ class FoundryInsuranceOrchestrator:
                 attributes={
                     "gen_ai.conversation.id": session_id,
                     "gen_ai.operation.name": "invoke_agent",
-                    "gen_ai.provider.name": "microsoft.foundry",
+                    "gen_ai.provider.name": "azure_openai",
                     "gen_ai.agent.name": "insurance_coordinator",
                     "session.id": session_id,
                     "user.id": user_id,
-                    "session.mode": "foundry",
+                    "session.mode": "azure_openai",
                     "conversation.message_count": len(chat_messages)
                 }
             ) as session_span:
@@ -280,177 +267,40 @@ class FoundryInsuranceOrchestrator:
             clear_conversation_context()
 
 
-async def get_existing_agent_ids(
-    project_endpoint: str,
-    credential: AzureCliCredential
-) -> dict[str, str]:
+def create_specialist_agents(chat_client: AzureOpenAIChatClient) -> tuple[ChatAgent, ChatAgent, ChatAgent]:
     """
-    Get IDs of existing agents in the Foundry project.
-    
-    Returns:
-        Dictionary mapping agent names to their IDs (most recent version)
-    """
-    from azure.ai.agents.aio import AgentsClient
-    
-    agent_ids = {}
-    async with AgentsClient(endpoint=project_endpoint, credential=credential) as client:
-        async for agent in client.list_agents():
-            if agent.name and agent.id:
-                if agent.name not in agent_ids:
-                    agent_ids[agent.name] = agent.id
-    
-    return agent_ids
-
-
-async def create_persistent_foundry_agents(
-    project_endpoint: str,
-    credential: AzureCliCredential,
-    model_deployment_name: str
-) -> tuple[ChatAgent, ChatAgent, ChatAgent]:
-    """
-    Create persistent agents in Microsoft Foundry using AgentManager, then wrap them
-    with ChatAgent for use in the orchestrator workflow.
-    
-    This creates actual Foundry-hosted agents that are visible in the Foundry UI
-    and persist across sessions.
+    Create the coordinator and specialist agents for the insurance workflow.
+    Uses Azure OpenAI mode with in-memory agents.
     
     Args:
-        project_endpoint: The Azure AI Project endpoint URL
-        credential: Azure credential for authentication
-        model_deployment_name: The model deployment name to use
+        chat_client: The Azure OpenAI chat client
         
     Returns:
         Tuple of (coordinator, crm_agent, policies_agent)
     """
-    print(f"\n🔧 Creating persistent Foundry agents...")
-    print(f"   Agents will be visible in Foundry UI")
-    print(f"   Tool schemas registered with Foundry (execution is local)")
-    print()
     
-    agents = []
+    coordinator = chat_client.create_agent(
+        instructions=AGENT_DEFINITIONS["ins-coordinator"]["instructions"],
+        name="ins-coordinator"
+    )
     
-    specialist_agent_names = ["ins-crm-agent", "ins-policies-agent"]
+    crm_agent = chat_client.create_agent(
+        instructions=AGENT_DEFINITIONS["ins-crm-agent"]["instructions"],
+        name="ins-crm-agent",
+        tools=crm_insurance_functions
+    )
     
-    async with AgentManager() as manager:
-        for agent_key in ["ins-coordinator", "ins-crm-agent", "ins-policies-agent"]:
-            agent_def = AGENT_DEFINITIONS[agent_key]
-            
-            tools = None
-            tool_schemas = None
-            
-            if agent_key == "ins-coordinator":
-                from foundry.agents.tool_schema_utils import create_handoff_tool_schemas, create_handoff_tools
-                tool_schemas = create_handoff_tool_schemas(specialist_agent_names)
-                tools = create_handoff_tools(specialist_agent_names)
-                print(f"   📦 {agent_key}: Registering {len(tool_schemas)} handoff tools with Foundry")
-            elif agent_key == "ins-crm-agent":
-                tools = crm_insurance_functions
-                tool_schemas = functions_to_tool_schemas(crm_insurance_functions)
-            elif agent_key == "ins-policies-agent":
-                tools = policies_functions
-                tool_schemas = functions_to_tool_schemas(policies_functions)
-            
-            agent_name = agent_def["name"]
-            
-            foundry_agent = await manager.create_agent(
-                agent_name=agent_name,
-                instructions=agent_def["instructions"],
-                model=model_deployment_name,
-                tools=tool_schemas
-            )
-            
-            print(f"✅ Created in Foundry: {foundry_agent['name']} (ID: {foundry_agent['id']})")
-            
-            client = AzureAIClient(
-                project_endpoint=project_endpoint,
-                model_deployment_name=model_deployment_name,
-                async_credential=credential,
-                agent_name=agent_name,
-                use_latest_version=True,
-                should_cleanup_agent=False
-            )
-            
-            agent = client.create_agent(
-                name=agent_key,
-                instructions=agent_def["instructions"],
-                tools=tools
-            )
-            
-            agents.append(agent)
+    policies_agent = chat_client.create_agent(
+        instructions=AGENT_DEFINITIONS["ins-policies-agent"]["instructions"],
+        name="ins-policies-agent",
+        tools=policies_functions
+    )
     
-    print(f"\n✅ All {len(agents)} agents created and registered in Foundry")
-    return tuple(agents)
-
-
-async def create_foundry_agents(
-    project_endpoint: str,
-    credential: AzureCliCredential,
-    model_deployment_name: str,
-    agent_version: str | None = None,
-    use_latest_version: bool = True,
-    force_new_version: bool = False
-) -> tuple[ChatAgent, ChatAgent, ChatAgent]:
-    """
-    Create or reuse agents using AzureAIClient (v2 API) for Microsoft Foundry project.
+    print(f"✅ Created coordinator agent: {coordinator.name}")
+    print(f"✅ Created CRM Insurance agent: {crm_agent.name}")
+    print(f"✅ Created Policies agent: {policies_agent.name}")
     
-    Args:
-        project_endpoint: The Azure AI Project endpoint URL
-        credential: Azure credential for authentication
-        model_deployment_name: The model deployment name to use
-        agent_version: Specific agent version to use (e.g., "1.0")
-        use_latest_version: If True, use latest existing version in Foundry
-        force_new_version: If True, create new version even if agent exists
-        
-    Returns:
-        Tuple of (coordinator, crm_agent, policies_agent)
-    """
-    agents = []
-    
-    print(f"\n🔧 Agent Configuration:")
-    print(f"   agent_version: {agent_version or 'auto'}")
-    print(f"   use_latest_version: {use_latest_version}")
-    print(f"   force_new_version: {force_new_version}")
-    print()
-    
-    specialist_agent_names = ["ins-crm-agent", "ins-policies-agent"]
-    
-    for agent_key in ["ins-coordinator", "ins-crm-agent", "ins-policies-agent"]:
-        agent_def = AGENT_DEFINITIONS[agent_key]
-        tools = None
-        
-        if agent_key == "ins-coordinator":
-            from foundry.agents.tool_schema_utils import create_handoff_tools
-            tools = create_handoff_tools(specialist_agent_names)
-            print(f"   📦 {agent_key}: Binding {len(tools)} handoff tools locally")
-        elif agent_key == "ins-crm-agent":
-            tools = crm_insurance_functions
-        elif agent_key == "ins-policies-agent":
-            tools = policies_functions
-        
-        agent_name = agent_def["name"]
-        
-        client = AzureAIClient(
-            project_endpoint=project_endpoint,
-            model_deployment_name=model_deployment_name,
-            async_credential=credential,
-            agent_name=agent_name,
-            agent_version=agent_version if not use_latest_version else None,
-            use_latest_version=use_latest_version and not force_new_version,
-            should_cleanup_agent=False
-        )
-        
-        agent = client.create_agent(
-            name=agent_key,
-            instructions=agent_def["instructions"],
-            tools=tools
-        )
-        
-        version_info = f"v{agent_version}" if agent_version else ("latest" if use_latest_version else "new")
-        print(f"✅ Agent ready: {agent_name} ({version_info})")
-        
-        agents.append(agent)
-    
-    return tuple(agents)
+    return coordinator, crm_agent, policies_agent
 
 
 async def handle_workflow_events(events: list[WorkflowEvent]) -> list[RequestInfoEvent]:
@@ -487,61 +337,32 @@ async def handle_workflow_events(events: list[WorkflowEvent]) -> list[RequestInf
 
 async def main():
     """
-    Main function to initialize and run the Foundry Insurance orchestrator.
-    Uses Microsoft Foundry mode with hosted agents.
-    
-    Foundry mode supports agent versioning:
-    - --version X.Y: Use specific agent version
-    - --latest: Use latest existing version (default)
-    - --force-new: Create new version even if agents exist
+    Main function to initialize and run the OpenAI Insurance orchestrator.
+    Uses Azure OpenAI mode with in-memory agents.
     """
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Moneta Insurance Multi-Agent Orchestrator (Foundry)")
-    parser.add_argument("--new", action="store_true", help="Create new persistent agents in Foundry")
-    parser.add_argument("--version", type=str, default=None, help="Specific agent version to use (e.g., 1.0)")
-    parser.add_argument("--latest", action="store_true", default=True, help="Use latest existing version (default)")
-    parser.add_argument("--force-new-version", action="store_true", help="Create new version even if agents exist")
-    
-    args = parser.parse_args()
-    
-    use_existing = not args.new
-    agent_version = args.version
-    use_latest_version = args.latest and agent_version is None
-    force_new_version = args.force_new_version
-    
     os.system('cls' if os.name=='nt' else 'clear')
     
     env_path = Path(__file__).parent.parent.parent / ".env"
     load_dotenv(env_path)
     
-    endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
-    deployment_name = os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4.1-mini")
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
     
-    print("🏗️  Using Microsoft Foundry mode (hosted agents)")
+    print("🔌 Using Azure OpenAI mode (in-memory agents)")
     
     if not endpoint:
-        print("❌ Error: AZURE_AI_PROJECT_ENDPOINT or PROJECT_ENDPOINT is required")
+        print("❌ Error: AZURE_OPENAI_ENDPOINT is required")
         return
     
     try:
         async with AzureCliCredential() as credential:
-            if not use_existing:
-                print("📝 Creating new persistent agents in Foundry...")
-                coordinator, crm_agent, policies_agent = await create_persistent_foundry_agents(
-                    project_endpoint=endpoint,
-                    credential=credential,
-                    model_deployment_name=deployment_name
-                )
-            else:
-                coordinator, crm_agent, policies_agent = await create_foundry_agents(
-                    project_endpoint=endpoint,
-                    credential=credential,
-                    model_deployment_name=deployment_name,
-                    agent_version=agent_version,
-                    use_latest_version=use_latest_version,
-                    force_new_version=force_new_version
-                )
+            chat_client = AzureOpenAIChatClient(
+                endpoint=endpoint,
+                deployment_name=deployment_name,
+                credential=credential
+            )
+            
+            coordinator, crm_agent, policies_agent = create_specialist_agents(chat_client)
             
             await run_workflow(coordinator, crm_agent, policies_agent)
     
@@ -579,7 +400,7 @@ async def run_workflow(
     
     print("\n" + "="*60)
     print("🛡️ MONETA INSURANCE MULTI-AGENT ORCHESTRATOR")
-    print("   Mode: Microsoft Foundry (hosted agents)")
+    print("   Mode: Azure OpenAI (in-memory agents)")
     print(f"   Session ID: {session_id}")
     print("="*60)
     print("\n🎭 Orchestrator with Specialist Agents:")
@@ -597,7 +418,7 @@ async def run_workflow(
         attributes={
             "gen_ai.conversation.id": session_id,
             "session.id": session_id,
-            "session.mode": "foundry"
+            "session.mode": "azure_openai"
         }
     ) as session_span:
         

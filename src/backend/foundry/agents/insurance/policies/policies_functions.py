@@ -15,7 +15,7 @@ from azure.identity import DefaultAzureCredential
 # Import tracing utilities from backend root
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
-from tracing_utils import get_tracing_manager
+from tracing import get_tracing_manager
 
 
 class InsurancePoliciesSearchFunctions:
@@ -29,7 +29,7 @@ class InsurancePoliciesSearchFunctions:
         self.search_endpoint = os.getenv("AI_SEARCH_ENDPOINT")
         self.search_index_name = os.getenv("AI_SEARCH_INS_INDEX_NAME")
         self.semantic_configuration_name = os.getenv("AI_SEARCH_INS_SEMANTIC_CONFIGURATION", "default")
-        self.vector_field_name = os.getenv("AI_SEARCH_VECTOR_FIELD_NAME", "contentVector")
+        self.vector_field_name = "text_vector"
         
         if not self.search_endpoint or not self.search_index_name:
             raise ValueError("AI_SEARCH_ENDPOINT and AI_SEARCH_INS_INDEX_NAME environment variables are required")

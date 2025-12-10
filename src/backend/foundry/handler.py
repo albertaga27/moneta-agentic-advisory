@@ -7,24 +7,24 @@ from foundry.orchestrators.foundry_banking_orchestrator import FoundryBankingOrc
 from foundry.orchestrators.foundry_insurance_orchestrator import FoundryInsuranceOrchestrator
 
 class Handler:
-    def __init__(self, history_db, handler_type: str = "foundry_banking"):
+    def __init__(self, history_db, use_foundry: bool = True):
         self.logger = logging.getLogger(__name__)
         self.logger.debug("Agentic Handler init")
 
         self.history_db = history_db
-        self.handler_type = handler_type
+        self.use_foundry = use_foundry
         self.orchestrators = {}
         
         # Use FoundryInsuranceOrchestrator for fsi_insurance
-        self.orchestrators['fsi_insurance'] = FoundryInsuranceOrchestrator(use_foundry=True)
+        self.orchestrators['fsi_insurance'] = FoundryInsuranceOrchestrator(use_foundry=self.use_foundry)
         self.logger.info(f"Using FoundryInsuranceOrchestrator for fsi_insurance")
         
         #self.orchestrators['energy'] = EnergyOrchestrator()
         
         # Use FoundryBankingOrchestrator for fsi_banking
-        self.orchestrators['fsi_banking'] = FoundryBankingOrchestrator(use_foundry=True)
-        self.logger.info(f"Using FoundryBankingOrchestrator for fsi_banking (handler_type: {handler_type})")
-        
+        self.orchestrators['fsi_banking'] = FoundryBankingOrchestrator(use_foundry=self.use_foundry)
+        self.logger.info(f"Using FoundryBankingOrchestrator for fsi_banking (use_foundry: {self.use_foundry})")
+
         self.orchestrators['deep_research'] = DeepResearchOrchestrator()
 
     def load_history(self, user_id):

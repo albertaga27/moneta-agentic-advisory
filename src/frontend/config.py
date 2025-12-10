@@ -2,7 +2,8 @@
 INS_PREDEFINED_QUESTIONS = [
     "Provide information about my client John Doe",
     "Can he travel to Bali with his current coverage?",
-    "Do we cover COVID-19 treatements in Indonesia?"
+    "Search for detailed terms and conditions for coverages abroad",
+    "Is COVID-19 treatments in Indonesia covered by travel insurance international?"
 ]
 
 INS_AGENTS = {

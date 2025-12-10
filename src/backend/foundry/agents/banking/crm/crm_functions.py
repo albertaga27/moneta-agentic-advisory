@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Optional
 # Import tracing utilities from backend root
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-from tracing_utils import get_tracing_manager
+from tracing import get_tracing_manager
 
 def load_from_crm_by_client_fullname(client_fullname: str) -> str:
     """

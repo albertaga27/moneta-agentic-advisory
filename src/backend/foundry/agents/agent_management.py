@@ -65,18 +65,14 @@ class AgentManager:
                     break
                 current_dir = current_dir.parent
         
-        # Get configuration from environment or parameters
+        # Get Foundry configuration from environment 
         self.project_endpoint = (
             project_endpoint or 
-            os.getenv("AZURE_AI_PROJECT_ENDPOINT") or 
-            os.getenv("PROJECT_ENDPOINT") or
-            os.getenv("AZURE_OPENAI_ENDPOINT")
+            os.getenv("PROJECT_ENDPOINT")
         )
         self.model_deployment_name = (
             model_deployment_name or 
-            os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME") or 
-            os.getenv("MODEL_DEPLOYMENT_NAME") or
-            os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+            os.getenv("MODEL_DEPLOYMENT_NAME") 
         )
         
         self._credential: Optional[AzureCliCredential] = None

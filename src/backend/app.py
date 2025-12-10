@@ -15,6 +15,10 @@ import util
 
 util.load_dotenv_from_azd()
 
+# Initialize tracing early - MUST be done before any agent/orchestrator imports
+from tracing import setup_tracing
+setup_tracing()
+
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
@@ -30,6 +34,7 @@ root_logger.addHandler(handler)
 
 logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
 logging.getLogger('azure.monitor.opentelemetry.exporter.export').setLevel(logging.WARNING)
+logging.getLogger('azure.cosmos._cosmos_http_logging_policy').setLevel(logging.WARNING)
 
 app = FastAPI()
 
@@ -87,12 +92,11 @@ async def http_trigger(request_body: dict = Body(...)):
     user_data = db.read_user_info(user_id)  
     # //: 1
 
-    # Decide which handler to use based on the HANDLER_TYPE environment variable  
-    handler_type = os.getenv("HANDLER_TYPE", "foundry_banking")
-    handler = Handler(db, handler_type=handler_type)  
+    # Decide the USE_FOUNDRY environment variable
+    use_foundry = os.getenv("USE_FOUNDRY", "true").lower() == "true"
+    handler = Handler(db, use_foundry=use_foundry)
 
-
-    logging.info(f"Handling request with {handler_type} handler...")
+    logging.info(f"Handling request with Foundry mode = {use_foundry}")
 
     try:  
         result = await handler.handle_request(

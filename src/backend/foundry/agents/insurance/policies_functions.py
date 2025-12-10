@@ -1,6 +1,6 @@
 """
-Funds functions for accessing generic funds and ETFs information.
-This module provides AI Search capabilities for querying funds and ETFs data.
+Insurance Policies functions for accessing insurance product information and policy details.
+This module provides AI Search capabilities for querying insurance documents.
 """
 
 import os
@@ -18,20 +18,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from tracing import get_tracing_manager
 
 
-class FundsSearchFunctions:
+class InsurancePoliciesSearchFunctions:
     """
-    Funds Search Functions for accessing generic funds and ETFs information.
+    Insurance Policies Search Functions for accessing insurance product information and policy details.
     Uses Azure AI Search for semantic search capabilities.
     """
     
     def __init__(self):
-        """Initialize the Funds Search Functions with Azure AI Search client."""
+        """Initialize the Insurance Policies Search Functions with Azure AI Search client."""
         self.search_endpoint = os.getenv("AI_SEARCH_ENDPOINT")
-        self.search_index_name = os.getenv("AI_SEARCH_FUNDS_INDEX_NAME")
-        self.semantic_configuration_name = os.getenv("AI_SEARCH_FUNDS_SEMANTIC_CONFIGURATION", "default")
+        self.search_index_name = os.getenv("AI_SEARCH_INS_INDEX_NAME")
+        self.semantic_configuration_name = os.getenv("AI_SEARCH_INS_SEMANTIC_CONFIGURATION", "default")
+        self.vector_field_name = os.getenv("AI_SEARCH_VECTOR_FIELD_NAME", "contentVector")
         
         if not self.search_endpoint or not self.search_index_name:
-            raise ValueError("AI_SEARCH_ENDPOINT and AI_SEARCH_FUNDS_INDEX_NAME environment variables are required")
+            raise ValueError("AI_SEARCH_ENDPOINT and AI_SEARCH_INS_INDEX_NAME environment variables are required")
         
         # Initialize Azure AI Search client with managed identity
         self.search_client = SearchClient(
@@ -47,21 +48,21 @@ class FundsSearchFunctions:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
-    def search_funds_details(self, query: Annotated[str, "The query to search for funds and ETFs information"]) -> Annotated[str, "The search results in JSON format"]:
+    def search_insurance_policies(self, query: Annotated[str, "The query to search for insurance policies and product information"]) -> Annotated[str, "The search results in JSON format"]:
         """
-        Search for generic funds and ETFs information including holdings, performances, sector exposures.
+        Search for insurance policies, products, and coverage information from documents.
         
         Args:
-            query: The search query for funds, ETFs, holdings, performance, or sector information
+            query: The search query for insurance policies, coverage details, or product information
             
         Returns:
-            JSON string containing search results with funds and ETFs details
+            JSON string containing search results with insurance policy information
         """
         tracing_manager = get_tracing_manager()
         
         try:
             with tracing_manager.trace_function_call(
-                "search_funds_details",
+                "search_insurance_policies",
                 parameters={
                     "query": query,
                     "search_endpoint": self.search_endpoint,
@@ -72,7 +73,7 @@ class FundsSearchFunctions:
                 text_vector_query = VectorizableTextQuery(
                     kind="text",
                     text=query,
-                    fields=os.getenv('FUNDS_AI_SEARCH_VECTOR_FIELD_NAME', "contentVector")
+                    fields=self.vector_field_name
                 )
 
                 # Perform semantic search with vector queries
@@ -95,22 +96,22 @@ class FundsSearchFunctions:
                     # Remove internal fields from response
                     result.pop("parent_id", None)
                     result.pop("chunk_id", None)
-                    result.pop(os.getenv('FUNDS_AI_SEARCH_VECTOR_FIELD_NAME', "contentVector"), None)
+                    result.pop(self.vector_field_name, None)
                     output.append(result)
 
-                self.logger.info(f"Funds search completed for query: '{query}' - Found {len(output)} results")
+                self.logger.info(f"Insurance policies search completed for query: '{query}' - Found {len(output)} results")
                 return json.dumps(output, indent=2)
             
         except Exception as e:
             # Log error in trace if available
             if tracing_manager and tracing_manager.is_configured:
                 with tracing_manager.trace_function_call(
-                    "search_funds_details_error",
+                    "search_insurance_policies_error",
                     parameters={"error": str(e), "query": query}
                 ):
                     pass
                     
-            self.logger.error(f"An unexpected error occurred in the 'search_funds_details' function of the 'funds_agent': {e}")
+            self.logger.error(f"An unexpected error occurred in the 'search_insurance_policies' function: {e}")
             return json.dumps({
                 "error": f"Search failed: {str(e)}",
                 "query": query,
@@ -119,19 +120,19 @@ class FundsSearchFunctions:
 
 
 # Global instance will be initialized when first used
-_funds_search_functions = None
+_insurance_policies_search_functions = None
 
-def get_funds_search_functions():
-    """Get or create the global funds search functions instance."""
-    global _funds_search_functions
-    if _funds_search_functions is None:
-        _funds_search_functions = FundsSearchFunctions()
-    return _funds_search_functions
+def get_insurance_policies_search_functions():
+    """Get or create the global insurance policies search functions instance."""
+    global _insurance_policies_search_functions
+    if _insurance_policies_search_functions is None:
+        _insurance_policies_search_functions = InsurancePoliciesSearchFunctions()
+    return _insurance_policies_search_functions
 
 # Function mapping for agent execution
-def search_funds_details(query: str) -> str:
+def search_insurance_policies(query: str) -> str:
     """Wrapper function for agent execution."""
-    return get_funds_search_functions().search_funds_details(query)
+    return get_insurance_policies_search_functions().search_insurance_policies(query)
 
 # Export functions for agent registration
-funds_functions = [search_funds_details]
+policies_functions = [search_insurance_policies]

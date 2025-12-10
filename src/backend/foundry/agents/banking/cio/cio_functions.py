@@ -15,7 +15,7 @@ from azure.identity import DefaultAzureCredential
 # Import tracing utilities from backend root
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-from tracing_utils import get_tracing_manager
+from tracing import get_tracing_manager
 
 
 class CIOSearchFunctions:

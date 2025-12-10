@@ -46,40 +46,16 @@ from foundry.agents.banking.news.news_functions import news_functions
 # Import agent management for Foundry mode
 from foundry.agents.agent_management import AgentManager
 
-# Setup Agent Framework observability - built-in OpenTelemetry integration
-from agent_framework.observability import setup_observability, get_tracer, OtelAttr
+# Import tool schema utilities for Foundry tool registration
+from foundry.agents.tool_schema_utils import functions_to_tool_schemas
 
-# Load environment to get connection string
+# Load environment
 _env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(_env_path)
 
-# Configure Agent Framework observability
-# The framework automatically traces: invoke_agent, chat, execute_tool spans
-_app_insights_conn_str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
-_enable_sensitive_data = os.getenv("ENABLE_AI_CONTENT_RECORDING", "false").lower() == "true"
-_otlp_endpoint = os.getenv("OTLP_ENDPOINT")
-
-if _app_insights_conn_str:
-    setup_observability(
-        applicationinsights_connection_string=_app_insights_conn_str,
-        enable_sensitive_data=_enable_sensitive_data
-    )
-    print("📊 Observability: Azure Application Insights")
-elif _otlp_endpoint:
-    setup_observability(
-        otlp_endpoint=_otlp_endpoint,
-        enable_sensitive_data=_enable_sensitive_data
-    )
-    print(f"📊 Observability: OTLP endpoint ({_otlp_endpoint})")
-else:
-    # Default to localhost for AI Toolkit
-    setup_observability(
-        otlp_endpoint="http://localhost:4317",
-        enable_sensitive_data=_enable_sensitive_data
-    )
-    print("📊 Observability: Local OTLP (localhost:4317)")
-
-# Get tracer for custom session-level spans
+# Setup tracing for App Insights + Foundry UI
+from tracing import setup_tracing, get_tracer
+setup_tracing()
 _tracer = get_tracer("moneta-orchestrator")
 
 
@@ -167,20 +143,19 @@ class FoundryBankingOrchestrator:
         
         # Configuration from environment
         self.openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.foundry_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
-        self.deployment_name = (
-            os.getenv("AZURE_OPENAI_DEPLOYMENT") or 
-            os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or
-            os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME") or 
-            os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4o-mini")
-        )
+        self.openai_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
         
-        # Choose endpoint based on mode
+        self.foundry_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
+
+        # Choose endpoint and deployment based on mode
         if self.use_foundry:
-            self.endpoint = self.foundry_endpoint or self.openai_endpoint
+            self.endpoint = self.foundry_endpoint 
+            self.foundry_deployment_name = os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4.1-mini")
         else:
-            self.endpoint = self.openai_endpoint or self.foundry_endpoint
-    
+            self.endpoint = self.openai_endpoint 
+            
+       
+
     async def _ensure_initialized(self):
         """Lazily initialize the workflow and agents."""
         if self._initialized:
@@ -207,7 +182,7 @@ class FoundryBankingOrchestrator:
         self.logger.info(f"Using Azure OpenAI endpoint for workflow: {self.openai_endpoint}")
         chat_client = AzureOpenAIChatClient(
             endpoint=self.openai_endpoint,
-            deployment_name=self.deployment_name,
+            deployment_name=self.openai_deployment_name,
             credential=credential
         )
         coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
@@ -286,7 +261,7 @@ class FoundryBankingOrchestrator:
                 "banking_conversation",
                 kind=SpanKind.SERVER,
                 attributes={
-                    str(OtelAttr.CONVERSATION_ID): session_id,
+                    "gen_ai.conversation.id": session_id,
                     "session.id": session_id,
                     "user.id": user_id,
                     "session.mode": "foundry" if self.use_foundry else "azure_openai",
@@ -442,9 +417,8 @@ async def create_persistent_foundry_agents(
     This creates actual Foundry-hosted agents that are visible in the Foundry UI
     and persist across sessions.
     
-    Note: Tools (Python functions) are NOT registered with Foundry - they are bound
-    to the local ChatAgent wrapper. Foundry stores the agent definition (name, 
-    instructions, model) while local tools execute at runtime.
+    Tools are now registered with Foundry using FunctionTool schemas, so they
+    appear in the Foundry UI and traces.
     
     Args:
         project_endpoint: The Azure AI Project endpoint URL
@@ -456,7 +430,7 @@ async def create_persistent_foundry_agents(
     """
     print(f"\n🔧 Creating persistent Foundry agents...")
     print(f"   Agents will be visible in Foundry UI")
-    print(f"   Tools are bound locally (not registered with Foundry)")
+    print(f"   Tools are registered with Foundry and bound locally for execution")
     print()
     
     agents = []
@@ -466,7 +440,7 @@ async def create_persistent_foundry_agents(
         for agent_key in ["coordinator", "crm_banking_agent", "cio_agent", "funds_agent", "news_agent"]:
             agent_def = AGENT_DEFINITIONS[agent_key]
             
-            # Get tools for this agent (used locally, not sent to Foundry)
+            # Get tools for this agent
             tools = None
             if agent_key == "crm_banking_agent":
                 tools = crm_functions
@@ -479,13 +453,19 @@ async def create_persistent_foundry_agents(
             
             agent_name = agent_def["name"]
             
+            # Convert Python functions to FunctionTool schemas for Foundry registration
+            tool_schemas = None
+            if tools:
+                tool_schemas = functions_to_tool_schemas(tools)
+                print(f"   📦 {agent_key}: Registering {len(tool_schemas)} tools with Foundry")
+            
             # Create persistent agent in Foundry via AgentManager
-            # Note: We don't pass tools here - Foundry stores the definition only
+            # Now passing tool schemas so Foundry knows about the tools
             foundry_agent = await manager.create_agent(
                 agent_name=agent_name,
                 instructions=agent_def["instructions"],
-                model=model_deployment_name
-                # tools are NOT passed - they're local Python functions
+                model=model_deployment_name,
+                tools=tool_schemas  # Register tools with Foundry
             )
             
             print(f"✅ Created in Foundry: {foundry_agent['name']} (ID: {foundry_agent['id']})")
@@ -670,22 +650,19 @@ async def main():
     env_path = Path(__file__).parent.parent.parent / ".env"
     load_dotenv(env_path)
     
-    # Configuration - support multiple environment variable names
+    # Configuration - # Configuration from environment
     openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
     foundry_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT") or os.getenv("PROJECT_ENDPOINT")
-    deployment_name = (
-        os.getenv("AZURE_OPENAI_DEPLOYMENT") or 
-        os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or
-        os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME") or 
-        os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4o-mini")
-    )
-    
-    # Choose endpoint based on mode
+
+
+    # Choose endpoint and deployment based on mode
     if use_foundry:
-        endpoint = foundry_endpoint or openai_endpoint
+        endpoint = foundry_endpoint
+        foundry_deployment_name = os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4.1-mini")
         print("🏗️  Using Microsoft Foundry mode (hosted agents with AzureAIClient v2)")
     else:
-        endpoint = openai_endpoint or foundry_endpoint
+        endpoint = openai_endpoint 
+        openai_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
         print("🔌 Using Azure OpenAI mode (in-memory agents)")
     
     # Validate required environment variables
@@ -707,14 +684,14 @@ async def main():
                     coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent = await create_persistent_foundry_agents(
                         project_endpoint=endpoint,
                         credential=credential,
-                        model_deployment_name=deployment_name
+                        model_deployment_name=foundry_deployment_name
                     )
                 else:
                     # Reuse existing Foundry-hosted agents with version support
                     coordinator, crm_banking_agent, cio_agent, funds_agent, news_agent = await create_foundry_agents(
                         project_endpoint=endpoint,
                         credential=credential,
-                        model_deployment_name=deployment_name,
+                        model_deployment_name=foundry_deployment_name,
                         use_existing=use_existing,
                         agent_version=agent_version,
                         use_latest_version=use_latest_version,
@@ -730,7 +707,7 @@ async def main():
                 # Azure OpenAI mode - use AzureOpenAIChatClient with in-memory agents
                 chat_client = AzureOpenAIChatClient(
                     endpoint=endpoint,
-                    deployment_name=deployment_name,
+                    deployment_name=openai_deployment_name,
                     credential=credential
                 )
                 
@@ -817,7 +794,7 @@ async def run_workflow(
         "banking_session",
         kind=SpanKind.SERVER,
         attributes={
-            str(OtelAttr.CONVERSATION_ID): session_id,  # Foundry trace correlation
+            "gen_ai.conversation.id": session_id,  # Foundry trace correlation
             "session.id": session_id,
             "session.mode": "foundry" if use_foundry else "azure_openai"
         }
@@ -846,7 +823,7 @@ async def run_workflow(
                     f"conversation_turn_{turn_counter}",
                     kind=SpanKind.INTERNAL,
                     attributes={
-                        str(OtelAttr.CONVERSATION_ID): session_id,  # Foundry trace correlation
+                        "gen_ai.conversation.id": session_id,  # Foundry trace correlation
                         "turn.number": turn_counter,
                         "turn.user_input": user_input[:500],
                         "session.id": session_id
@@ -880,7 +857,7 @@ async def run_workflow(
                         f"followup_turn_{turn_counter}",
                         kind=SpanKind.INTERNAL,
                         attributes={
-                            str(OtelAttr.CONVERSATION_ID): session_id,  # Foundry trace correlation
+                            "gen_ai.conversation.id": session_id,  # Foundry trace correlation
                             "turn.number": turn_counter,
                             "turn.is_followup": True,
                             "turn.user_input": user_response[:500],

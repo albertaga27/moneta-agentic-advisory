@@ -29,7 +29,8 @@ from agent_framework import (
     HandoffBuilder,
     RequestInfoEvent,
     WorkflowOutputEvent,
-    WorkflowEvent
+    WorkflowEvent,
+    ExecutorCompletedEvent
 )
 from agent_framework._workflows._events import AgentRunEvent
 from agent_framework.azure import AzureOpenAIChatClient
@@ -131,7 +132,7 @@ class OpenAIBankingOrchestrator:
         
         # Configuration from environment
         self.openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.openai_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+        self.openai_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
     async def _ensure_initialized(self):
         """Lazily initialize the workflow and agents."""
@@ -154,14 +155,13 @@ class OpenAIBankingOrchestrator:
         )
         coordinator, crm_agent, cio_agent, funds_agent, news_agent = create_specialist_agents(chat_client)
         
-        # Build the handoff workflow with auto-registered handoff tools
+        # Build the handoff workflow
         self._workflow = (
             HandoffBuilder(
                 name="moneta_banking_handoff",
                 participants=[coordinator, crm_agent, cio_agent, funds_agent, news_agent],
             )
-            .set_coordinator(coordinator)
-            .auto_register_handoff_tools(True)
+            .with_start_agent(coordinator)
             .with_termination_condition(
                 lambda conv: sum(1 for msg in conv if msg.role.value == "user") >= 10
             )
@@ -244,28 +244,18 @@ class OpenAIBankingOrchestrator:
                 
                 async for event in self._workflow.run_stream(chat_messages):
                     if isinstance(event, RequestInfoEvent):
-                        self.logger.debug(f"RequestInfoEvent: source={event.source_executor_id}, data type={type(event.data).__name__}")
-                        if hasattr(event.data, 'conversation') and event.data.conversation:
-                            for msg in reversed(event.data.conversation):
-                                if hasattr(msg, 'role') and msg.role.value == 'assistant':
-                                    if hasattr(msg, 'text') and msg.text:
-                                        final_response = msg.text
-                                        responding_agent = getattr(msg, 'author_name', None) or getattr(event.data, 'awaiting_agent_id', 'coordinator')
-                                        self.logger.info(f"Captured response from '{responding_agent}': {len(final_response)} chars")
-                                        break
+                        # Handle HandoffAgentUserRequest with agent_response
+                        if hasattr(event.data, 'agent_response') and event.data.agent_response:
+                            agent_response = event.data.agent_response
+                            if hasattr(agent_response, 'text') and agent_response.text:
+                                final_response = agent_response.text
+                                responding_agent = event.source_executor_id or "bank-coordinator"
                     
-                    elif isinstance(event, AgentRunEvent):
-                        if event.data and event.data.text:
-                            final_response = event.data.text
-                            responding_agent = event.executor_id or "bank-coordinator"
-                            self.logger.info(f"Captured from AgentRunEvent '{responding_agent}': {len(final_response)} chars")
-                    
-                    elif isinstance(event, WorkflowOutputEvent):
-                        if hasattr(event, 'data'):
+                    elif isinstance(event, ExecutorCompletedEvent):
+                        if event.data is not None:
                             if hasattr(event.data, 'text') and event.data.text:
                                 final_response = event.data.text
-                                responding_agent = getattr(event, 'source_executor_id', 'coordinator')
-                                self.logger.info(f"Captured from WorkflowOutputEvent: {len(final_response)} chars")
+                                responding_agent = event.executor_id or "bank-coordinator"
                 
                 self.logger.info(f"Final response: {len(final_response)} chars from '{responding_agent}'")
                 
@@ -303,30 +293,30 @@ def create_specialist_agents(chat_client: AzureOpenAIChatClient) -> tuple[ChatAg
         Tuple of (coordinator, crm_agent, cio_agent, funds_agent, news_agent)
     """
     
-    coordinator = chat_client.create_agent(
+    coordinator = chat_client.as_agent(
         instructions=AGENT_DEFINITIONS["bank-coordinator"]["instructions"],
         name="bank-coordinator"
     )
     
-    crm_agent = chat_client.create_agent(
+    crm_agent = chat_client.as_agent(
         instructions=AGENT_DEFINITIONS["bank-crm-agent"]["instructions"],
         name="bank-crm-agent",
         tools=crm_functions
     )
     
-    cio_agent = chat_client.create_agent(
+    cio_agent = chat_client.as_agent(
         instructions=AGENT_DEFINITIONS["bank-cio-agent"]["instructions"],
         name="bank-cio-agent",
         tools=cio_functions
     )
     
-    funds_agent = chat_client.create_agent(
+    funds_agent = chat_client.as_agent(
         instructions=AGENT_DEFINITIONS["bank-funds-agent"]["instructions"],
         name="bank-funds-agent",
         tools=funds_functions
     )
     
-    news_agent = chat_client.create_agent(
+    news_agent = chat_client.as_agent(
         instructions=AGENT_DEFINITIONS["bank-news-agent"]["instructions"],
         name="bank-news-agent",
         tools=news_functions
@@ -384,7 +374,7 @@ async def main():
     load_dotenv(env_path)
     
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+    deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
     
     print("🔌 Using Azure OpenAI mode (in-memory agents)")
     
@@ -430,8 +420,7 @@ async def run_workflow(
             name="moneta_banking_handoff",
             participants=[coordinator, crm_agent, cio_agent, funds_agent, news_agent],
         )
-        .set_coordinator(coordinator)
-        .auto_register_handoff_tools(True)
+        .with_start_agent(coordinator)
         .with_termination_condition(
             lambda conv: sum(1 for msg in conv if msg.role.value == "user") >= 10
         )

@@ -70,8 +70,8 @@ async def http_trigger(request_body: dict = Body(...)):
         container_name = os.getenv("COSMOSDB_CONTAINER_FSI_INS_USER_NAME")  
     elif usecase_type == 'fsi_banking':  
         container_name = os.getenv("COSMOSDB_CONTAINER_FSI_BANK_USER_NAME")  
-    elif usecase_type == 'energy':  
-        container_name = os.getenv("COSMOSDB_CONTAINER_ENERGY_USER_NAME")       
+    elif usecase_type == 'fsi_mortgage':  
+        container_name = os.getenv("COSMOSDB_CONTAINER_FSI_MORTGAGE_USER_NAME")       
     else:  
         raise HTTPException(status_code=400, detail="Use case not recognized/not implemented...")  
 

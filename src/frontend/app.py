@@ -7,9 +7,11 @@ import streamlit as st
 from dotenv import load_dotenv
 from config import (
     INS_AGENTS, 
-    BANK_AGENTS, 
+    BANK_AGENTS,
+    MORTGAGE_AGENTS,
     INS_PREDEFINED_QUESTIONS, 
     BANK_PREDEFINED_QUESTIONS,
+    MORTGAGE_PREDEFINED_QUESTIONS,
     AGENT_STYLES,
     GENERAL_STYLES
 )
@@ -90,6 +92,27 @@ if "AGENTS" not in st.session_state:
 if "is_deep_research" not in st.session_state:
     st.session_state.is_deep_research = False
 
+
+def _get_agents_for_use_case(use_case: str) -> dict:
+    """Return the appropriate agents dictionary for the given use case."""
+    if use_case == 'fsi_insurance':
+        return INS_AGENTS
+    elif use_case == 'fsi_mortgage':
+        return MORTGAGE_AGENTS
+    else:  # fsi_banking is default
+        return BANK_AGENTS
+
+
+def _get_predefined_questions_for_use_case(use_case: str) -> list:
+    """Return the appropriate predefined questions for the given use case."""
+    if use_case == 'fsi_insurance':
+        return INS_PREDEFINED_QUESTIONS
+    elif use_case == 'fsi_mortgage':
+        return MORTGAGE_PREDEFINED_QUESTIONS
+    else:  # fsi_banking is default
+        return BANK_PREDEFINED_QUESTIONS
+
+
 def fetch_conversations():
     payload = {
         "user_id": st.session_state.user_id,
@@ -118,22 +141,27 @@ def display_sidebar():
         st.write("Empowering Advisors with AI")
         st.write(f"Welcome, {st.session_state.display_name}!")
 
-        use_case_options = ['fsi_insurance', 'fsi_banking']
-        selected_use_case = st.selectbox('Select Use Case', use_case_options, index=use_case_options.index(st.session_state.use_case), key='use_case_selectbox')
+        use_case_options = ['fsi_banking', 'fsi_insurance', 'fsi_mortgage']
+        use_case_labels = {
+            'fsi_banking': '🏦 Banking',
+            'fsi_insurance': '🛡️ Insurance', 
+            'fsi_mortgage': '🏠 Mortgage'
+        }
+        selected_use_case = st.selectbox(
+            'Select Use Case', 
+            use_case_options, 
+            index=use_case_options.index(st.session_state.use_case), 
+            format_func=lambda x: use_case_labels.get(x, x),
+            key='use_case_selectbox'
+        )
         if selected_use_case != st.session_state.use_case:
             st.session_state.use_case = selected_use_case
-            if st.session_state.use_case == 'fsi_insurance':
-                st.session_state.AGENTS = INS_AGENTS
-            else:
-                st.session_state.AGENTS = BANK_AGENTS
+            st.session_state.AGENTS = _get_agents_for_use_case(selected_use_case)
             st.session_state.conversations = fetch_conversations()
             st.session_state.current_conversation_index = None
 
         # Initialize AGENTS based on use_case
-        if st.session_state.use_case == 'fsi_insurance':
-            st.session_state.AGENTS = INS_AGENTS 
-        else:
-            st.session_state.AGENTS = BANK_AGENTS
+        st.session_state.AGENTS = _get_agents_for_use_case(st.session_state.use_case)
 
         # Apply styles
         st.markdown(AGENT_STYLES, unsafe_allow_html=True)
@@ -235,10 +263,7 @@ def display_chat():
     messages = conversation_dict['messages']
 
     # Display predefined questions based on use case
-    if st.session_state.use_case == 'fsi_banking':
-        predefined_questions = BANK_PREDEFINED_QUESTIONS
-    else:
-        predefined_questions = INS_PREDEFINED_QUESTIONS
+    predefined_questions = _get_predefined_questions_for_use_case(st.session_state.use_case)
     question_options = ["Select a predefined question or type your own below"] + predefined_questions
     selected_question = st.selectbox("", question_options, key="question_selectbox")
 
@@ -387,10 +412,7 @@ def main():
         st.session_state.display_name = "Default User"
     
     # Initialize AGENTS based on use_case
-    if st.session_state.use_case == 'fsi_insurance':
-        st.session_state.AGENTS = INS_AGENTS
-    else:
-        st.session_state.AGENTS = BANK_AGENTS
+    st.session_state.AGENTS = _get_agents_for_use_case(st.session_state.use_case)
 
     if not st.session_state.conversations:
         st.session_state.conversations = fetch_conversations()

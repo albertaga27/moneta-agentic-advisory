@@ -34,32 +34,36 @@ def load_from_crm_by_client_fullname(client_fullname: str) -> str:
         
         # Load the JSON data
         with open(json_file_path, 'r', encoding='utf-8') as file:
-            client_data = json.load(file)
+            data = json.load(file)
         
-        # Check if the full name matches (case-insensitive)
-        if client_data.get('fullName', '').lower() == client_fullname.lower():
-            # Return the relevant client information
-            result = {
-                "status": "success",
-                "client": {
-                    "id": client_data.get('id'),
-                    "clientID": client_data.get('clientID'),
-                    "fullName": client_data.get('fullName'),
-                    "firstName": client_data.get('firstName'),
-                    "lastName": client_data.get('lastName'),
-                    "dateOfBirth": client_data.get('dateOfBirth'),
-                    "nationality": client_data.get('nationality'),
-                    "contactDetails": client_data.get('contactDetails'),
-                    "address": client_data.get('address'),
-                    "financialInformation": client_data.get('financialInformation'),
-                    "investmentProfile": client_data.get('investmentProfile'),
-                    "declared_source_of_wealth": client_data.get('declared_source_of_wealth'),
-                    "portfolio": client_data.get('portfolio')
+        # Support both a single object and an array of clients
+        clients = data if isinstance(data, list) else [data]
+        
+        # Search for a matching full name (case-insensitive)
+        for client_data in clients:
+            if client_data.get('fullName', '').lower() == client_fullname.lower():
+                # Return the relevant client information
+                result = {
+                    "status": "success",
+                    "client": {
+                        "id": client_data.get('id'),
+                        "clientID": client_data.get('clientID'),
+                        "fullName": client_data.get('fullName'),
+                        "firstName": client_data.get('firstName'),
+                        "lastName": client_data.get('lastName'),
+                        "dateOfBirth": client_data.get('dateOfBirth'),
+                        "nationality": client_data.get('nationality'),
+                        "contactDetails": client_data.get('contactDetails'),
+                        "address": client_data.get('address'),
+                        "financialInformation": client_data.get('financialInformation'),
+                        "investmentProfile": client_data.get('investmentProfile'),
+                        "declared_source_of_wealth": client_data.get('declared_source_of_wealth'),
+                        "portfolio": client_data.get('portfolio')
+                    }
                 }
-            }
-            return json.dumps(result, indent=2)
-        else:
-            return json.dumps({"error": f"Client with full name '{client_fullname}' not found in CRM"})
+                return json.dumps(result, indent=2)
+        
+        return json.dumps({"error": f"Client with full name '{client_fullname}' not found in CRM"})
             
     except FileNotFoundError:
         return json.dumps({"error": "CRM data file not found"})
@@ -103,32 +107,36 @@ def load_from_crm_by_client_id(client_id: str) -> str:
         
         # Load the JSON data
         with open(json_file_path, 'r', encoding='utf-8') as file:
-            client_data = json.load(file)
+            data = json.load(file)
         
-        # Check if the client ID matches
-        if client_data.get('clientID') == client_id or client_data.get('id') == client_id:
-            # Return the relevant client information
-            result = {
-                "status": "success",
-                "client": {
-                    "id": client_data.get('id'),
-                    "clientID": client_data.get('clientID'),
-                    "fullName": client_data.get('fullName'),
-                    "firstName": client_data.get('firstName'),
-                    "lastName": client_data.get('lastName'),
-                    "dateOfBirth": client_data.get('dateOfBirth'),
-                    "nationality": client_data.get('nationality'),
-                    "contactDetails": client_data.get('contactDetails'),
-                    "address": client_data.get('address'),
-                    "financialInformation": client_data.get('financialInformation'),
-                    "investmentProfile": client_data.get('investmentProfile'),
-                    "declared_source_of_wealth": client_data.get('declared_source_of_wealth'),
-                    "portfolio": client_data.get('portfolio')
+        # Support both a single object and an array of clients
+        clients = data if isinstance(data, list) else [data]
+        
+        # Search for a matching client ID
+        for client_data in clients:
+            if client_data.get('clientID') == client_id or client_data.get('id') == client_id:
+                # Return the relevant client information
+                result = {
+                    "status": "success",
+                    "client": {
+                        "id": client_data.get('id'),
+                        "clientID": client_data.get('clientID'),
+                        "fullName": client_data.get('fullName'),
+                        "firstName": client_data.get('firstName'),
+                        "lastName": client_data.get('lastName'),
+                        "dateOfBirth": client_data.get('dateOfBirth'),
+                        "nationality": client_data.get('nationality'),
+                        "contactDetails": client_data.get('contactDetails'),
+                        "address": client_data.get('address'),
+                        "financialInformation": client_data.get('financialInformation'),
+                        "investmentProfile": client_data.get('investmentProfile'),
+                        "declared_source_of_wealth": client_data.get('declared_source_of_wealth'),
+                        "portfolio": client_data.get('portfolio')
+                    }
                 }
-            }
-            return json.dumps(result, indent=2)
-        else:
-            return json.dumps({"error": f"Client with ID '{client_id}' not found in CRM"})
+                return json.dumps(result, indent=2)
+        
+        return json.dumps({"error": f"Client with ID '{client_id}' not found in CRM"})
             
     except FileNotFoundError:
         return json.dumps({"error": "CRM data file not found"})

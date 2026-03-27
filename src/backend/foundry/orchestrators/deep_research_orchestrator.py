@@ -37,7 +37,7 @@ class DeepResearchOrchestrator:
         """Initialize the global Azure OpenAI LLM client if not already initialized."""
     
         endpoint_name = os.getenv("AZURE_OPENAI_ENDPOINT")
-        deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+        deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
         credential = aio_identity.DefaultAzureCredential()
         llm_client = aio_inference.ChatCompletionsClient(
             endpoint=f"{endpoint_name.strip('/')}/openai/deployments/{deployment_name}",

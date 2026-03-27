@@ -53,12 +53,17 @@ if __name__ == "__main__":
 
     # Loading Banking
     logger.info("Loading Banking Customer")
-    banking_customer = ''
+    banking_customers = ''
     try:  
         # Open and read the JSON file
         with open('src/data/customer-profiles/customer-banking.json', 'r') as file:
-            banking_customer =  json.load(file)
+            banking_customers =  json.load(file)
     except Exception as e:
         print(f"An unexpected error occurred: {e}") 
 
-    db.create_customer_profile(banking_customer)
+    # Support both a single object and an array of customers
+    if isinstance(banking_customers, list):
+        for customer in banking_customers:
+            db.create_customer_profile(customer)
+    else:
+        db.create_customer_profile(banking_customers)

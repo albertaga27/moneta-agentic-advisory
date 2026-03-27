@@ -22,8 +22,7 @@ class ConversationStore:
         try:
             self.container = self.db.create_container_if_not_exists(
                 id=self.container_name,
-                partition_key=PartitionKey(path="/user_id"),
-                offer_throughput=400
+                partition_key=PartitionKey(path="/user_id")
             )
         except exceptions.CosmosResourceExistsError:
             self.container = self.db.get_container_client(container=self.container_name)

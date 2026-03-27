@@ -25,7 +25,7 @@ The backend supports two orchestrator modes that can be selected via the `USE_FO
 - **`USE_FOUNDRY=false`** (or not set)
 - Uses `AzureOpenAIChatClient` with **in-memory agents**
 - Agents are created on-the-fly and don't persist between sessions
-- Requires `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_DEPLOYMENT_NAME` environment variables
+- Requires `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_DEPLOYMENT` environment variables
 - Orchestrators: `OpenAIBankingOrchestrator`, `OpenAIInsuranceOrchestrator`
 
 ### Microsoft Foundry Mode

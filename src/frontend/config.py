@@ -54,6 +54,39 @@ BANK_AGENTS = {
     }
 }
 
+# Mortgage Configuration
+MORTGAGE_PREDEFINED_QUESTIONS = [
+    "Show me my mortgage applications",
+    "What's the status of the latest mortgage request?",
+    "Check if my latest mortgage request application is approved",
+    "What documents are needed to submit a new mortgage request?",
+    "Start the process for a new mortgage request",
+    "What are the policy requirements for mortgage approval?"
+]
+
+MORTGAGE_AGENTS = {
+    'mortgage-coordinator': {
+        'emoji': '🏠',
+        'color': '#28a745',
+        'description': 'Main coordinator for mortgage applications. Routes requests to specialists and helps you find your mortgage requests by ID, status, or other criteria. Use this agent to get an overview of your applications.'
+    },
+    'classifier': {
+        'emoji': '📋',
+        'color': '#17a2b8',
+        'description': 'Document Classification Specialist. Analyzes and categorizes your mortgage documents (ID, income proof, property valuation, etc.) to ensure all required documentation is properly organized.'
+    },
+    'document_extractor': {
+        'emoji': '📄',
+        'color': '#ffc107',
+        'description': 'Document Extraction Specialist. Extracts key data from your submitted documents using AI-powered document intelligence, including income figures, property details, and identity information.'
+    },
+    'policy_checker': {
+        'emoji': '✅',
+        'color': '#dc3545',
+        'description': 'Policy Compliance Specialist. Verifies your mortgage application against regulatory requirements and bank policies, providing approval recommendations and explaining any issues.'
+    }
+}
+
 
 # CSS Styles
 AGENT_STYLES = """

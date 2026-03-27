@@ -10,6 +10,7 @@ from foundry.orchestrators.foundry_insurance_orchestrator import FoundryInsuranc
 # OpenAI orchestrators (in-memory agents)
 from foundry.orchestrators.open_ai_banking_orchestrator import OpenAIBankingOrchestrator
 from foundry.orchestrators.open_ai_insurance_orchestrator import OpenAIInsuranceOrchestrator
+from foundry.orchestrators.openai_mortgage_orchestrator import MortgageOrchestrator
 
 
 class Handler:
@@ -47,6 +48,10 @@ class Handler:
         self.logger.info(f"Handler initialized with USE_FOUNDRY={self.use_foundry}")
 
         self.orchestrators['deep_research'] = DeepResearchOrchestrator()
+        
+        # Mortgage orchestrator (uses sequential + handoff workflows)
+        self.orchestrators['fsi_mortgage'] = MortgageOrchestrator(enable_human_review=False)
+        self.logger.info("Using MortgageOrchestrator for fsi_mortgage (Azure OpenAI in-memory agents)")
 
     def load_history(self, user_id):
         user_data = self.history_db.read_user_info(user_id)

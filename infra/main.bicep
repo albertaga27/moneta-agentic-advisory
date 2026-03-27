@@ -762,7 +762,7 @@ module backendApp 'modules/app/container-apps.bicep' = {
       // Required for managed identity
       AZURE_CLIENT_ID: backendIdentity.outputs.clientId
       AZURE_OPENAI_ENDPOINT: azureOpenAi.outputs.endpoint
-      AZURE_OPENAI_DEPLOYMENT_NAME: deployments[0].name
+      AZURE_OPENAI_DEPLOYMENT: deployments[0].name
       AZURE_OPENAI_API_VERSION: azureOpenAiApiVersion
 
       // OLD TO BE MIGRATED
@@ -859,7 +859,7 @@ output AZURE_OPENAI_NAME string = azureOpenAi.outputs.name
 output AZURE_OPENAI_ENDPOINT string = azureOpenAi.outputs.endpoint
 
 @description('Azure OpenAI Core Model Deployment Name')
-output AZURE_OPENAI_DEPLOYMENT_NAME string = deployments[0].name
+output AZURE_OPENAI_DEPLOYMENT string = deployments[0].name
 
 @description('Azure OpenAI Core Model Deployment Name')
 output AZURE_OPENAI_API_VERSION string = azureOpenAiApiVersion
